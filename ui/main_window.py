@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import deque
 import ctypes
 import socket
+import webbrowser
 
 try:
     import psutil
@@ -58,7 +59,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SingularityEngine.1")
         except Exception:
             pass
-        self.VERSION = "1.0.0"
+        self.VERSION = "1.56"
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
         self.geometry("1200x800")
         self.configure(bg="#2b2b2b")
@@ -172,14 +173,16 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
     # ================== Вспомогательные системные методы ==================
     def check_for_updates(self):
         """Проверяет наличие новых релизов на GitHub и уведомляет пользователя."""
-        from utils.updater import get_latest_release
+        from utils.updater import get_latest_release, GITHUB_REPO
         latest = get_latest_release()
-        if latest and latest != self.VERSION:
-            self.log(f"Доступна новая версия: {latest}", tag="done")
-            if messagebox.askyesno("Обновление",
-                                   f"Найдена новая версия {latest}.\nОткрыть страницу релиза?"):
-                import webbrowser
-                webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
+        if latest:
+            latest_version = latest.lstrip("v")
+            if latest_version != self.VERSION:
+                self.log(f"Доступна новая версия: {latest}", tag="done")
+                if messagebox.askyesno("Обновление",
+                                       f"Найдена новая версия {latest}.\nОткрыть страницу релиза?"):
+                    import webbrowser
+                    webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
 
     def _cleanup_broken_port_config(self, build_path):
         paths = [
