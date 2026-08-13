@@ -1,0 +1,9 @@
+﻿builds/
+logs/
+config.json
+config.json.bak
+.idea/
+*.zip
+*.exe
+__pycache__/
+*.pyc

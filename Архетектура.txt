@@ -1,0 +1,16 @@
+SingularityEngine/
+├── main.py                 # этот файл
+├── ui/
+│   ├── __init__.py         # пустой
+│   ├── main_window.py      # класс SingularityEngineApp
+│   ├── dialogs.py          # DialogsMixin
+│   └── widgets.py          # ToolTip, show_notification
+├── core/
+│   ├── __init__.py
+│   ├── logger.py
+│   ├── port_allocator.py
+│   ├── config.py
+│   └── download_manager.py
+└── utils/
+    ├── __init__.py
+    └── system.py
