@@ -37,6 +37,11 @@ from utils.system import hidden_startupinfo as sys_hidden_startupinfo, open_path
 from ui.dialogs import DialogsMixin
 from ui.constants import THEMES, BUSY_STATUSES, BUTTON_SEMANTICS, STATUS_ICONS
 
+def resource_path(relative):
+    if hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS) / relative
+    return Path(__file__).parent.parent / relative
+
 
 class SingularityEngineApp(tk.Tk, DialogsMixin):
     CONFIG_FILE = "config.json"
@@ -57,10 +62,10 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
         self.geometry("1200x800")
         self.configure(bg="#2b2b2b")
-        icon_path = Path(__file__).parent.parent / "Singularity-Engine.ico"
+        icon_path = resource_path("Singularity-Engine.ico")
+        png_icon = resource_path("Singularity-Engine2.png")
         if icon_path.exists():
             self.iconbitmap(str(icon_path))
-        png_icon = Path(__file__).parent.parent / "Singularity-Engine2.png"
         if png_icon.exists():
             self.iconphoto(True, tk.PhotoImage(file=str(png_icon)))
 
@@ -175,7 +180,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                                    f"Найдена новая версия {latest}.\nОткрыть страницу релиза?"):
                 import webbrowser
                 webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
-                
+
     def _cleanup_broken_port_config(self, build_path):
         paths = [
             os.path.join(build_path, "bin", "Content.Server", "server_config.toml"),
