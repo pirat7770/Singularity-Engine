@@ -1,6 +1,5 @@
 ## README.md
 
-```markdown
 # Singularity Engine
 
 Менеджер сборок Space Station 14 с графическим интерфейсом.  
