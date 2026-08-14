@@ -1,3 +1,6 @@
+## README.md
+
+```markdown
 # Singularity Engine
 
 Менеджер сборок Space Station 14 с графическим интерфейсом.  
@@ -46,33 +49,120 @@
 ## Запуск из исходников
 
 1. Клонируйте репозиторий:
-  git clone https://github.com/pirat7770/Singularity-Engine.git
-  cd Singularity-Engine
-   
+
+   ```bash
+   git clone https://github.com/pirat7770/Singularity-Engine.git
+   cd Singularity-Engine
+   ```
+
 2. Создайте виртуальное окружение:
+
+   ```bash
    python -m venv .venv
-    .venv\Scripts\activate
-   
+   .venv\Scripts\activate
+   ```
+
 3. Установите зависимости:
+
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+
+   Если файла `requirements.txt` нет, установите вручную:
+
+   ```bash
    python -m pip install psutil pystray Pillow pywinstyles
+   ```
 
-4.Запустите программу:
-  python main.py
+4. Запустите программу:
 
-**Сборка из исходников**
-1.Установите PyInstaller и зависимости в активное окружение:
-  python -m pip install pyinstaller psutil pystray Pillow pywinstyles
+   ```bash
+   python main.py
+   ```
 
-2.Выполните сборку:
-  python -m PyInstaller \
-  --onefile \
-  --windowed \
-  --name SingularityEngine \
-  --icon Singularity-Engine.ico \
-  --add-data "Singularity-Engine.ico;." \
-  --add-data "Singularity-Engine2.png;." \
-  --hidden-import=psutil \
-  --hidden-import=pystray \
-  --hidden-import=PIL \
-  --hidden-import=pywinstyles \
-  main.py
+## Сборка из исходников
+
+1. Установите PyInstaller и зависимости в активное окружение:
+
+   ```bash
+   python -m pip install pyinstaller psutil pystray Pillow pywinstyles
+   ```
+
+2. Выполните сборку:
+
+   ```bash
+   python -m PyInstaller \
+     --onefile \
+     --windowed \
+     --name SingularityEngine \
+     --icon Singularity-Engine.ico \
+     --add-data "Singularity-Engine.ico;." \
+     --add-data "Singularity-Engine2.png;." \
+     --hidden-import=psutil \
+     --hidden-import=pystray \
+     --hidden-import=PIL \
+     --hidden-import=pywinstyles \
+     main.py
+   ```
+
+   Результат будет в папке `dist/SingularityEngine.exe`.
+
+## Настройки
+
+Настройки доступны по нажатию на значок ⚙ в верхней панели.
+
+| Настройка | Описание |
+|-----------|----------|
+| Сохранять завершённые экземпляры в списке | Оставлять записи об остановленных экземплярах для просмотра логов |
+| Максимум экземпляров одной сборки | Лимит одновременных запусков одной сборки |
+| Автоматически удалять неудавшиеся сборки | Удалять папку после ошибки сборки |
+| Запрашивать подтверждение перед очисткой кэша | Показывать диалог перед глубокой очисткой |
+| Мелкое клонирование (shallow clone) | Использовать `--depth 1` для ускорения загрузки |
+| Параллельная сборка (dotnet build -m) | Включить многопоточную компиляцию MSBuild |
+| Предварительное восстановление пакетов (dotnet restore) | Запускать `dotnet restore` перед сборкой |
+| Строго соблюдать основную версию SDK | Не заменять major-версию SDK автоматически |
+| Автоматически устанавливать недостающие зависимости | Скачивать и запускать установщики Git/Python/.NET без спроса |
+| Подтверждать опасные действия | Спрашивать подтверждение при удалении/переустановке |
+| Сворачивать в трей при закрытии | Скрывать окно в системный трей вместо полного выхода |
+| Сохранять git-кэш при удалении | Включить/выключить кэширование `.git` для ускорения повторной установки |
+
+## Структура проекта
+
+```
+Singularity-Engine/
+├── main.py                 # точка входа
+├── ui/
+│   ├── main_window.py      # главное окно и бизнес-логика
+│   ├── dialogs.py          # диалоговые окна и утилиты
+│   ├── widgets.py          # всплывающие подсказки, уведомления
+│   └── constants.py        # темы, статусы, иконки
+├── core/
+│   ├── config.py           # управление конфигурацией
+│   ├── logger.py           # логирование в файл
+│   ├── port_allocator.py   # выделение UDP-портов
+│   └── download_manager.py # загрузка с кэшем
+├── utils/
+│   ├── system.py           # системные утилиты
+│   └── updater.py          # проверка обновлений на GitHub
+├── builds/                 # папка сборок (создаётся автоматически)
+├── logs/                   # логи (создаётся автоматически)
+├── config.json             # настройки пользователя (не коммитить)
+└── requirements.txt        # зависимости Python
+```
+
+## Безопасность
+
+Программа **отключает проверку SSL-сертификатов** при загрузке установщиков и готовых сборок. Это сделано для обхода проблем с устаревшими корневыми сертификатами на некоторых системах, но **снижает безопасность**. Используйте только в доверенных сетях.
+
+## Лицензия
+
+MIT License. Подробности см. в файле [LICENSE](LICENSE).
+
+---
+
+**Примечание:**  
+Для обновления программы на GitHub используйте теги вида `v1.56`, а в `main_window.py` указывайте `self.VERSION = "1.56"`.  
+При изменении кода не забывайте обновлять релиз.
+```
+
+Этот README можно сразу использовать в вашем репозитории. При необходимости скорректируйте ссылку на репозиторий и имя пользователя.
