@@ -16,13 +16,13 @@ class ConfigManager:
                 "url": "https://github.com/imperial-space/SW-public.git",
                 "mode": "Debug",
                 "prebuilt_url": None,
-                "favorite": True
+                "favorite": False
             },
             "Мёртвый Космос": {
                 "url": "https://github.com/dead-space-server/space-station-14-fobos.git",
                 "mode": "Debug",
                 "prebuilt_url": "https://cdn.deadspace14.net/fork/dspublicfobos",
-                "favorite": True
+                "favorite": False
             },
             "Imperial Space": {
                 "url": "https://github.com/imperial-space/SS14-public.git",
@@ -63,6 +63,8 @@ class ConfigManager:
             "auto_install_deps": False,
             "confirm_destructive": True,
             "keep_finished_instances": True,
+            "enable_git_cache": True,
+            "minimize_to_tray": False,
             "max_instances": 5,
         }
 

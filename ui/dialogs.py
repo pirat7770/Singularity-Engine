@@ -93,6 +93,25 @@ class DialogsMixin:
         auto_deps_var = tk.BooleanVar(value=self.settings.get("auto_install_deps", False))
         confirm_destructive_var = tk.BooleanVar(value=self.settings.get("confirm_destructive", True))
 
+        # Чекбокс сворачивания в трей
+        minimize_to_tray_var = tk.BooleanVar(value=self.settings.get("minimize_to_tray", True))
+        minimize_to_tray_check = tk.Checkbutton(tab_general,
+                                                text="Сворачивать в трей при закрытии",
+                                                variable=minimize_to_tray_var, bg=t["bg"], fg=t["fg"],
+                                                selectcolor=t["bg"],
+                                                activebackground=t["bg"], activeforeground=t["menu_fg"])
+        minimize_to_tray_check.pack(anchor="w", padx=20, pady=5)
+        self.settings_widgets.append(minimize_to_tray_check)
+
+        # Чекбокс для git-кэша
+        enable_git_cache_var = tk.BooleanVar(value=self.settings.get("enable_git_cache", True))
+        enable_git_cache_check = tk.Checkbutton(tab_general,
+                                                text="Сохранять git-кэш при удалении (ускоряет переустановку)",
+                                                variable=enable_git_cache_var, bg=t["bg"], fg=t["fg"],
+                                                selectcolor=t["bg"],
+                                                activebackground=t["bg"], activeforeground=t["menu_fg"])
+        enable_git_cache_check.pack(anchor="w", padx=20, pady=5)
+        self.settings_widgets.append(enable_git_cache_check)
         # Кнопка очистки кэша
         clear_cache_btn = tk.Button(tab_general, text="Очистить кэш",
                                     bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
@@ -252,6 +271,8 @@ class DialogsMixin:
             self.settings["strict_sdk_major"] = strict_sdk_var.get()
             self.settings["auto_install_deps"] = auto_deps_var.get()
             self.settings["confirm_destructive"] = confirm_destructive_var.get()
+            self.settings["minimize_to_tray"] = minimize_to_tray_var.get()
+            self.settings["enable_git_cache"] = enable_git_cache_var.get()
             self.settings["keep_finished_instances"] = keep_finished_var.get()
             self.settings["max_instances"] = max_inst_var.get()
             self.settings["theme"] = current_theme.get()
@@ -306,16 +327,39 @@ class DialogsMixin:
         """Очищает весь кэш: установщики и git-объекты."""
         # Очистка кэша установщиков
         self.clear_download_cache()
+
         # Очистка git-кэша
         git_cache_dir = Path(self.builds_dir) / ".git_cache"
-        if git_cache_dir.exists():
-            try:
-                shutil.rmtree(git_cache_dir)
-                self.log("🧹 Git-кэш очищен.", tag="success")
-            except Exception as e:
-                self.log(f"❌ Не удалось очистить git-кэш: {e}", tag="error")
-        else:
+        if not git_cache_dir.exists():
             self.log("ℹ Git-кэш уже пуст.", tag="info")
+            return
+
+        # Завершаем процессы, которые могут держать файлы кэша
+        self.kill_processes_locking_folder(str(git_cache_dir))
+        time.sleep(0.5)  # небольшая пауза для освобождения файлов
+
+        # Пробуем удалить через shutil (быстро)
+        try:
+            shutil.rmtree(git_cache_dir, ignore_errors=True)
+            if not git_cache_dir.exists():
+                self.log("🧹 Git-кэш очищен.", tag="success")
+                return
+        except Exception:
+            pass
+
+        # Если не удалось, пробуем через cmd
+        if sys.platform == "win32":
+            try:
+                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(git_cache_dir)],
+                               capture_output=True, timeout=10)
+                if not git_cache_dir.exists():
+                    self.log("🧹 Git-кэш очищен через cmd.", tag="success")
+                    return
+            except Exception:
+                pass
+
+        # Если всё ещё не удалилось, сообщаем об ошибке
+        self.log("❌ Не удалось очистить git-кэш: файлы заняты другим процессом.", tag="error")
 
     def clear_download_cache(self):
         """Очищает только кэш установщиков."""

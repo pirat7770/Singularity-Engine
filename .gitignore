@@ -7,3 +7,4 @@ config.json.bak
 *.exe
 __pycache__/
 *.pyc
+*.txt

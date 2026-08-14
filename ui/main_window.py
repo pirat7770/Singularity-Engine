@@ -17,9 +17,11 @@ from collections import deque
 import ctypes
 import socket
 import webbrowser
-
+import pystray
+from PIL import Image, ImageDraw
+import threading
+import psutil
 try:
-    import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -59,7 +61,9 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SingularityEngine.1")
         except Exception:
             pass
-        self.VERSION = "1.56"
+        self.VERSION = "1.86"
+        self.tray_icon = None
+        self._tray_thread = None
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
         self.geometry("1200x800")
         self.configure(bg="#2b2b2b")
@@ -127,8 +131,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._instances = {}
         self._instance_counter = {}
         self._current_instance_id = None
-        self._operation_log_buffers = {}   # имя_сборки -> deque(maxlen=10000)
-        self._current_log_build = None     # имя выбранной сборки для просмотра логов операции
         self._log_history = deque(maxlen=10000)
         self._active_operations = {}
         self._game_toggle_lock = False
@@ -137,6 +139,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._closing = False
         self._operation_procs = {}
         self._cancel_download = False
+        self._last_download_log = -1
         self._operation_lock = False
 
         self.port_allocator = PortAllocator()
@@ -166,11 +169,19 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
         self.deiconify()
         self.bind("<Button-1>", self._on_global_click)
-        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self.bind_all("<Control-c>", self.copy_selection)
         self.bind_all("<Control-C>", self.copy_selection)
 
     # ================== Вспомогательные системные методы ==================
+
+    def _on_window_close(self):
+        """Обрабатывает нажатие на крестик."""
+        if self.settings.get("minimize_to_tray", True):
+            self._hide_to_tray()
+        else:
+            self._on_closing()
+
     def check_for_updates(self):
         """Проверяет наличие новых релизов на GitHub и уведомляет пользователя."""
         from utils.updater import get_latest_release, GITHUB_REPO
@@ -224,7 +235,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if selection:
             instance_id = selection[0]
             self._current_instance_id = instance_id
-            self._current_log_build = None   # сбрасываем просмотр логов сборки
             self._refresh_console_view()
         else:
             self._current_instance_id = None
@@ -362,7 +372,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
     def _show_system_logs(self):
         self._current_instance_id = None
-        self._current_log_build = None   # сбрасываем просмотр логов сборки
         self._refresh_console_view()
         self._refresh_instance_list()
 
@@ -402,6 +411,55 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             return "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-arm64.exe"
         else:
             return "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe"
+
+    # ================== Трей ==================
+
+    def _create_tray_icon(self):
+        """Создаёт иконку в системном трее."""
+        try:
+            icon_image = Image.open(resource_path("Singularity-Engine.ico"))
+        except Exception as e:
+            self.log(f"⚠ Не удалось загрузить иконку для трея: {e}", tag="warn")
+            return
+
+        try:
+            menu = pystray.Menu(
+                pystray.MenuItem("Открыть", self._restore_from_tray),
+                pystray.MenuItem("Выход", self._exit_from_tray),
+            )
+            self.tray_icon = pystray.Icon(
+                "SingularityEngine",
+                icon_image,
+                "Singularity Engine",
+                menu
+            )
+            self._tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+            self._tray_thread.start()
+        except Exception as e:
+            self.log(f"⚠ Не удалось создать иконку в трее: {e}", tag="warn")
+            self.tray_icon = None
+
+    def _restore_from_tray(self):
+        """Восстанавливает окно из трея."""
+        self.after(0, self._show_window)
+
+    def _show_window(self):
+        self.deiconify()
+        self.state('normal')
+        self.lift()
+        self.focus_force()
+
+    def _hide_to_tray(self):
+        """Сворачивает окно в трей."""
+        self.withdraw()
+        if self.tray_icon is None:
+            self._create_tray_icon()
+
+    def _exit_from_tray(self):
+        """Полностью завершает программу из трея."""
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.after(0, self._on_closing)
 
     # ================== Установка зависимостей ==================
     def _offer_sdk_install_before_build(self, required_version, build_name, build_path):
@@ -488,6 +546,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
         def download_thread():
             try:
+                self._last_download_log = -1
+                self._download_start = time.time()
                 installer_path = self.download_manager.download(
                     url, dest_name, progress_callback=self._download_progress
                 )
@@ -960,6 +1020,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.after(0, self.refresh_builds_list)
 
     def _end_operation(self, name):
+        if name not in self._active_operations:
+            return  # операция уже завершена
         self._active_operations.pop(name, None)
         self._operation_lock = False
         self.progress_bar.stop()
@@ -1010,21 +1072,11 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._end_operation(name)
         self.log(f"✅ Операция для '{name}' отменена, файлы удалены.", tag="success")
 
-    def log(self, text, tag="info", operation_name=None):
-        entry = (text, tag)
-        if operation_name:
-            if operation_name not in self._operation_log_buffers:
-                self._operation_log_buffers[operation_name] = deque(maxlen=10000)
-            self._operation_log_buffers[operation_name].append(entry)
-            # Если пользователь выбрал эту сборку и не смотрит на экземпляр, обновляем консоль
-            if self._current_instance_id is None and self._current_log_build == operation_name:
-                self.after(0, self._refresh_console_view)
-        else:
-            self._log_history.append(entry)
-            if self._current_instance_id is None and self._current_log_build is None:
-                self.after(0, self._refresh_console_view)
+    def log(self, text, tag="info"):
+        self._log_history.append((text, tag))
+        if self._current_instance_id is None:
+            self.after(0, self._refresh_console_view)
 
-        # Запись в файл
         if tag == "error":
             logger.error(text)
         elif tag == "warn":
@@ -1170,6 +1222,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         def _download():
             zip_path = None
             try:
+                self._last_download_log = -1
+                self._download_start = time.time()
                 zip_path = os.path.join(self.builds_dir, f"{name}.zip")
                 self._download_start = time.time()
                 urllib.request.urlretrieve(url, zip_path, self._download_progress)
@@ -1224,9 +1278,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         name = selected[0]
         operation_running = self._operation_lock
         active_operation_name = next(iter(self._active_operations), None) if self._active_operations else None
-        if self._current_instance_id is None:
-            self._current_log_build = name
-            self._refresh_console_view()
         status = self.get_build_status(name)
         running = self._is_game_running(name)
         # Если выполняется другая операция, разрешаем только запуск установленных сборок
@@ -1350,9 +1401,11 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             btn.config(state=state)
 
     def _start_operation(self, name, operation_text, progress_mode="indeterminate"):
+        self._cancel_download = False
         if self._operation_lock:
             self.log("⚠ Уже выполняется другая операция. Дождитесь завершения.", tag="warn")
             return
+        ...
         if name in self._active_operations:
             self.log(f"⚠ Операция '{operation_text}' уже выполняется для '{name}'.", tag="warn")
             return
@@ -1374,7 +1427,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             return
         if self._is_game_running(name):
             self._stop_game(name)
-            time.sleep(0.5)
+            time.sleep(0.5)  # можно уменьшить до 0.2
 
         if self.settings.get("confirm_destructive", True):
             if not messagebox.askyesno("Подтверждение",
@@ -1387,8 +1440,9 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
         def _del():
             try:
-                # Сохраняем .git в кэш перед удалением
-                self._save_git_to_cache(name, build_path)
+                # Сохраняем .git только если включено в настройках
+                if self.settings.get("enable_git_cache", True):
+                    self._move_git_to_cache(name, build_path)
                 # Полное удаление
                 if self._fast_remove_folder(build_path, name):
                     self.log(f"✅ Сборка {name} удалена.", tag="success")
@@ -1401,19 +1455,25 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
     def _get_git_cache_dir(self):
         return Path(self.builds_dir) / ".git_cache"
 
-    def _save_git_to_cache(self, name, build_path):
-        """Сохраняет .git папку сборки в кэш для ускорения будущих установок."""
+    def _move_git_to_cache(self, name, build_path):
+        """Перемещает .git папку сборки в кэш (быстро)."""
         git_dir = Path(build_path) / ".git"
         if not git_dir.exists():
             return
         cache_dir = self._get_git_cache_dir() / name
         try:
+            # Быстро удаляем старый кэш, если он есть (игнорируя ошибки)
             if cache_dir.exists():
-                shutil.rmtree(cache_dir)
-            shutil.copytree(git_dir, cache_dir)
-            self.log(f"💾 Git-кэш для '{name}' обновлён.", tag="info")
+                if sys.platform == "win32":
+                    subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(cache_dir)],
+                                   capture_output=True, timeout=10)
+                else:
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+            # Мгновенное перемещение .git в кэш
+            shutil.move(str(git_dir), str(cache_dir))
+            self.log(f"💾 Git-кэш для '{name}' перемещён.", tag="info")
         except Exception as e:
-            self.log(f"⚠ Не удалось сохранить git-кэш: {e}", tag="warn")
+            self.log(f"⚠ Не удалось переместить git-кэш: {e}", tag="warn")
 
     def _move_to_trash(self, folder_path, name):
         if isinstance(folder_path, str):
@@ -1659,11 +1719,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.console.config(state="normal")
         self.console.delete("1.0", "end")
 
-        # Приоритет: экземпляр -> выбранная сборка -> системные логи
         if self._current_instance_id and self._current_instance_id in self._instances:
             buffer = self._instances[self._current_instance_id]["log_buffer"]
-        elif self._current_log_build and self._current_log_build in self._operation_log_buffers:
-            buffer = self._operation_log_buffers[self._current_log_build]
         else:
             buffer = self._log_history
 
@@ -1820,35 +1877,95 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
     def _installation_thread(self, name, repo_url, build_path, auto_start=False):
         try:
-            clone_cmd = ["git", "clone", "--progress"]
-            # Используем git-кэш, если он есть
+            # ---------- Клонирование ----------
+            clone_success = False
             git_cache_path = self._get_git_cache_dir() / name
-            if git_cache_path.exists():
-                clone_cmd += ["--reference", str(git_cache_path), "--dissociate"]
-            if self.settings.get("shallow_clone", False):
-                clone_cmd += ["--depth", "1"]
-            clone_cmd += [repo_url, build_path]
 
-            if not self._run_subprocess(clone_cmd, cwd=None,
-                                        step_name="git clone", progress_parser=self.filter_git_line,
-                                        operation_name=name):
+            # 1) Пытаемся клонировать с git-кэшем, если он есть
+            if git_cache_path.exists():
+                clone_cmd = ["git", "clone", "--progress",
+                             "--reference", str(git_cache_path), "--dissociate"]
+                if self.settings.get("shallow_clone", False):
+                    clone_cmd += ["--depth", "1"]
+                clone_cmd += [repo_url, build_path]
+
+                clone_success = self._run_subprocess(
+                    clone_cmd, cwd=None,
+                    step_name="git clone (с кэшем)",
+                    progress_parser=self.filter_git_line,
+                    operation_name=name
+                )
+
+                if not clone_success:
+                    self.log("⚠ Клонирование с git-кэшем не удалось. Пробуем без кэша...", tag="warn")
+                    try:
+                        shutil.rmtree(git_cache_path, ignore_errors=True)
+                    except Exception:
+                        pass
+
+            # Если операция отменена после попытки с кэшем — выходим
+            if self._cancel_download:
+                self.log("🛑 Установка отменена пользователем.", tag="warn")
                 self.after(0, lambda: self._end_operation(name))
                 self.after(0, self._install_failed, name, build_path)
                 return
 
+            # 2) Если с кэшем не получилось, клонируем обычным способом
+            if not clone_success:
+                clone_cmd = ["git", "clone", "--progress"]
+                if self.settings.get("shallow_clone", False):
+                    clone_cmd += ["--depth", "1"]
+                clone_cmd += [repo_url, build_path]
+
+                clone_success = self._run_subprocess(
+                    clone_cmd, cwd=None,
+                    step_name="git clone",
+                    progress_parser=self.filter_git_line,
+                    operation_name=name
+                )
+
+            if not clone_success:
+                self.after(0, lambda: self._end_operation(name))
+                self.after(0, self._install_failed, name, build_path)
+                return
+
+            # Проверка отмены после клонирования
+            if self._cancel_download:
+                self.log("🛑 Установка отменена после клонирования.", tag="warn")
+                self.after(0, lambda: self._end_operation(name))
+                self.after(0, self._install_failed, name, build_path)
+                return
+
+            # После успешного клонирования обновляем прогресс
             self.after(0, self.progress_var.set, 100)
             self.after(0, self.lbl_speed.config, {"text": "Скачано"})
+
+            # ---------- Подготовка / RUN_THIS.py / сабмодули ----------
+            if self._cancel_download:
+                self.log("🛑 Установка отменена перед выполнением RUN_THIS.py.", tag="warn")
+                self.after(0, lambda: self._end_operation(name))
+                self.after(0, self._install_failed, name, build_path)
+                return
+
             self._set_operation(name, "Сборка...")
             self.after(0, self.progress_bar.config, {"mode": "indeterminate"})
             self.after(0, self.progress_bar.start)
             self.after(0, self.lbl_speed.config, {"text": "Сборка..."})
 
-            if not self._run_subprocess([sys.executable, "RUN_THIS.py"], build_path, "RUN_THIS.py",
-                                        operation_name=name):
+            if not self._run_subprocess([sys.executable, "RUN_THIS.py"], build_path,
+                                        "RUN_THIS.py", operation_name=name):
                 self.log("⚠ RUN_THIS.py не выполнен. Пробуем git submodule update...", tag="warn")
-                self._run_subprocess(["git", "submodule", "update", "--init", "--recursive"], build_path,
-                                     "git submodule update", operation_name=name)
+                self._run_subprocess(["git", "submodule", "update", "--init", "--recursive"],
+                                     build_path, "git submodule update", operation_name=name)
 
+            # Проверка отмены после RUN_THIS.py / сабмодулей
+            if self._cancel_download:
+                self.log("🛑 Установка отменена после подготовки.", tag="warn")
+                self.after(0, lambda: self._end_operation(name))
+                self.after(0, self._install_failed, name, build_path)
+                return
+
+            # ---------- Проверка целостности репозитория ----------
             required_files = [
                 os.path.join(build_path, "Content.Server", "Content.Server.csproj"),
                 os.path.join(build_path, "Content.Client", "Content.Client.csproj"),
@@ -1865,6 +1982,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 self.after(0, self._install_failed, name, build_path)
                 return
 
+            # ---------- Проверка global.json и SDK ----------
             global_json = os.path.join(build_path, "global.json")
             if os.path.exists(global_json):
                 try:
@@ -1887,11 +2005,19 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 except Exception:
                     pass
 
+            # ---------- Сборка ----------
+            if self._cancel_download:
+                self.log("🛑 Установка отменена перед сборкой.", tag="warn")
+                self.after(0, lambda: self._end_operation(name))
+                self.after(0, self._install_failed, name, build_path)
+                return
+
             mode = self.repositories[name].get("mode", "Debug")
             self._print_build_diagnostics(build_path)
             self._run_pre_restore_if_needed(build_path)
             build_cmd = self._get_build_command(mode)
             self.log(f"--- dotnet build ({mode}) ---", tag="info")
+
             if self._run_subprocess(build_cmd, build_path, "dotnet build", operation_name=name):
                 self.after(0, lambda: self._end_operation(name))
                 self.after(0, self._install_success, name)
@@ -2010,6 +2136,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
         def download_thread():
             try:
+                self._last_download_log = -1
+                self._download_start = time.time()
                 installer_path = self.download_manager.download(
                     url, dest_name=f"dotnet-sdk-{version}-{platform.machine().lower()}.exe",
                     progress_callback=self._download_progress
@@ -2059,10 +2187,16 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if total_size > 0:
             percent = min(100, int(block_num * block_size * 100 / total_size))
             self.after(0, self.progress_var.set, percent)
+
             elapsed = time.time() - self._download_start
             if elapsed > 0:
                 speed = block_num * block_size / elapsed
                 self.after(0, self.lbl_speed.config, {"text": f"{speed / 1024 / 1024:.2f} MiB/s"})
+
+            # Логируем каждые 10% (и 100%)
+            if percent % 10 == 0 and percent != self._last_download_log:
+                self.log(f"⬇ Загрузка: {percent}%", tag="info")
+                self._last_download_log = percent
         else:
             self.after(0, self.progress_bar.config, {"mode": "indeterminate"})
             self.after(0, self.progress_bar.start)
@@ -2102,28 +2236,45 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         try:
             for line in process.stdout:
                 line = line.strip()
+                # Если операция отменена, прерываем процесс
+                if self._cancel_download and operation_name:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=2)
+                    except Exception:
+                        process.kill()
+                    self.log("🛑 Процесс прерван из-за отмены операции.", tag="warn")
+                    break
+
                 if progress_parser:
                     parsed = progress_parser(line)
                     if parsed is False:
                         continue
                     if parsed is not None:
                         line = parsed
+
                 buffer.append((line, "info"))
                 if len(buffer) >= 50 or time.time() - last_flush > 0.2:
                     for text, tag in buffer:
-                        if operation_name:
-                            self.log(text, tag, operation_name=operation_name)
-                        else:
-                            self.log(text, tag)
+                        self.log(text, tag)
                     buffer.clear()
                     last_flush = time.time()
+
             for text, tag in buffer:
-                if operation_name:
-                    self.log(text, tag, operation_name=operation_name)
-                else:
-                    self.log(text, tag)
+                self.log(text, tag)
         except Exception:
             pass
+
+        process.wait(timeout=1800)
+        if process in self._running_subprocesses:
+            self._running_subprocesses.remove(process)
+        if operation_name and process in self._operation_procs.get(operation_name, []):
+            self._operation_procs[operation_name].remove(process)
+
+        if process.returncode != 0:
+            self.log(f"❌ {step_name} ошибка {process.returncode}", tag="error")
+            return False
+        return True
 
         process.wait(timeout=1800)
         if process in self._running_subprocesses:
@@ -2196,7 +2347,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
     def kill_processes_locking_folder(self, folder_path):
         killed = False
-        normalized = os.path.normpath(folder_path).lower() + os.sep
+        normalized = os.path.normpath(folder_path).lower()
         if PSUTIL_AVAILABLE:
             for proc in psutil.process_iter(['pid', 'name', 'exe', 'cwd']):
                 try:
@@ -2214,21 +2365,18 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         else:
-            # Fallback через PowerShell, ищем процессы с путём в папке
+            # Быстрый способ: использовать taskkill с фильтром по модулю (git, dotnet и т.п.)
             try:
-                ps_folder = folder_path.replace(os.sep, "/")
-                ps_cmd = (
-                    f"Get-Process | Where-Object {{ $_.Path -like '{ps_folder}*' }} "
-                    "| Stop-Process -Force"
-                )
-                subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, timeout=10)
+                # Убиваем все процессы git, которые могут держать файлы
+                subprocess.run(["taskkill", "/F", "/IM", "git.exe"], capture_output=True, timeout=5)
+                subprocess.run(["taskkill", "/F", "/IM", "dotnet.exe"], capture_output=True, timeout=5)
                 killed = True
-                self.log("🛑 Процессы в папке завершены через PowerShell.", tag="warn")
+                self.log("🛑 Процессы git/dotnet завершены через taskkill.", tag="warn")
             except Exception as e:
-                self.log(f"⚠ Не удалось завершить процессы в {folder_path}: {e}", tag="warn")
+                self.log(f"⚠ Не удалось завершить процессы: {e}", tag="warn")
 
         if killed:
-            time.sleep(1)
+            time.sleep(0.2)  # уменьшили с 1 секунды до 0.2
         return killed
 
     def _fast_remove_folder(self, folder_path, name):
@@ -2236,32 +2384,35 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             folder_path = Path(folder_path)
         self.kill_processes_locking_folder(str(folder_path))
 
+        # Быстрое удаление через cmd
         if sys.platform == "win32":
             try:
-                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(folder_path)], capture_output=True, timeout=10)
+                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(folder_path)],
+                               capture_output=True, timeout=10)
+                if not folder_path.exists():
+                    self.log(f"✅ Папка {name} удалена через cmd.", tag="success")
+                    return True
             except subprocess.TimeoutExpired:
-                self.log("⚠ cmd rmdir превысил время ожидания.", tag="warn")
-            if not folder_path.exists():
-                self.log(f"✅ Папка {name} удалена через cmd.", tag="success")
-                return True
+                pass
 
+        # Если не получилось, пробуем shutil с ignore_errors
         try:
-            shutil.rmtree(str(folder_path))
+            shutil.rmtree(str(folder_path), ignore_errors=True)
             if not folder_path.exists():
                 self.log(f"✅ Папка {name} удалена через shutil.", tag="success")
                 return True
-        except Exception as e:
-            self.log(f"⚠ shutil: {e}", tag="warn")
+        except Exception:
+            pass
 
+        # Последний шанс – от имени администратора
         if sys.platform == "win32":
-            self.log("🔧 Запрос прав администратора...", tag="warn")
             ps_command = (
                 f'Start-Process cmd -ArgumentList "/c", "rmdir", "/s", "/q", '
                 f'"{str(folder_path)}" -Verb RunAs'
             )
             try:
                 subprocess.Popen(["powershell", "-Command", ps_command], shell=True)
-                self.after(5000, lambda: self._check_removed(str(folder_path), name))
+                self.after(1000, lambda: self._check_removed(str(folder_path), name))
             except Exception as e:
                 self.log(f"❌ Ошибка повышения: {e}", tag="error")
         return False
@@ -2363,13 +2514,14 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             self.after(0, self._handle_build_failure, name, build_path, is_clean_rebuild=True)
 
     def filter_git_line(self, line):
-        match = re.search(r'Receiving objects:\s+(\d+)%.*?\|\s+([\d.]+\s+[a-zA-Z]+/s)', line)
-        if match:
-            self.after(0, self.progress_var.set, int(match.group(1)))
-            self.after(0, self.lbl_speed.config, {"text": match.group(2)})
-        if re.search(r'(Counting|Compressing|Receiving|Resolving|Updating) .*:\s+\d+%', line):
-            if not match:
-                return False
+        percent_match = re.search(r'(\d+)%', line)
+        if percent_match:
+            percent = int(percent_match.group(1))
+            self.after(0, self.progress_var.set, percent)
+
+        speed_match = re.search(r'\|\s*([\d.]+\s*[a-zA-Z]+/s)', line)
+        if speed_match:
+            self.after(0, self.lbl_speed.config, {"text": speed_match.group(1)})
         return line
 
     def copy_logs(self):
@@ -2641,8 +2793,3 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 activebackground=t["menu_active_bg"],
                 activeforeground=t["menu_active_fg"],
             )
-
-
-if __name__ == "__main__":
-    app = SingularityEngineApp()
-    app.mainloop()

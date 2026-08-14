@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=['.venv/Lib/site-packages'],
     binaries=[],
     datas=[('Singularity-Engine.ico', '.'), ('Singularity-Engine2.png', '.')],
-    hiddenimports=[],
+    hiddenimports=['psutil', 'pystray', 'PIL', 'pywinstyles'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
