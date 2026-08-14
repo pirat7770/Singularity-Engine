@@ -64,12 +64,6 @@
 3. Установите зависимости:
 
    ```bash
-   python -m pip install -r requirements.txt
-   ```
-
-   Если файла `requirements.txt` нет, установите вручную:
-
-   ```bash
    python -m pip install psutil pystray Pillow pywinstyles
    ```
 
