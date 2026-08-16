@@ -8,6 +8,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\AvifImagePlugin.py',
    'PYMODULE'),
+  ('PIL.BdfFontFile',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\BdfFontFile.py',
+   'PYMODULE'),
   ('PIL.BlpImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\BlpImagePlugin.py',
@@ -19,6 +23,10 @@
   ('PIL.BufrStubImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\BufrStubImagePlugin.py',
+   'PYMODULE'),
+  ('PIL.ContainerIO',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ContainerIO.py',
    'PYMODULE'),
   ('PIL.CurImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -48,6 +56,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\FliImagePlugin.py',
    'PYMODULE'),
+  ('PIL.FontFile',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\FontFile.py',
+   'PYMODULE'),
   ('PIL.FpxImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\FpxImagePlugin.py',
@@ -59,6 +71,10 @@
   ('PIL.GbrImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\GbrImagePlugin.py',
+   'PYMODULE'),
+  ('PIL.GdImageFile',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\GdImageFile.py',
    'PYMODULE'),
   ('PIL.GifImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -116,6 +132,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageDraw2.py',
    'PYMODULE'),
+  ('PIL.ImageEnhance',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageEnhance.py',
+   'PYMODULE'),
   ('PIL.ImageFile',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageFile.py',
@@ -128,6 +148,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageFont.py',
    'PYMODULE'),
+  ('PIL.ImageGrab',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageGrab.py',
+   'PYMODULE'),
   ('PIL.ImageMath',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageMath.py',
@@ -135,6 +159,10 @@
   ('PIL.ImageMode',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageMode.py',
+   'PYMODULE'),
+  ('PIL.ImageMorph',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageMorph.py',
    'PYMODULE'),
   ('PIL.ImageOps',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -160,6 +188,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageShow.py',
    'PYMODULE'),
+  ('PIL.ImageStat',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageStat.py',
+   'PYMODULE'),
   ('PIL.ImageText',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageText.py',
@@ -167,6 +199,10 @@
   ('PIL.ImageTk',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageTk.py',
+   'PYMODULE'),
+  ('PIL.ImageTransform',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\ImageTransform.py',
    'PYMODULE'),
   ('PIL.ImageWin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -212,6 +248,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\MspImagePlugin.py',
    'PYMODULE'),
+  ('PIL.PSDraw',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\PSDraw.py',
+   'PYMODULE'),
   ('PIL.PaletteFile',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\PaletteFile.py',
@@ -223,6 +263,10 @@
   ('PIL.PcdImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\PcdImagePlugin.py',
+   'PYMODULE'),
+  ('PIL.PcfFontFile',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\PcfFontFile.py',
    'PYMODULE'),
   ('PIL.PcxImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -268,6 +312,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\SunImagePlugin.py',
    'PYMODULE'),
+  ('PIL.TarIO',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\TarIO.py',
+   'PYMODULE'),
   ('PIL.TgaImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\TgaImagePlugin.py',
@@ -279,6 +327,10 @@
   ('PIL.TiffTags',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\TiffTags.py',
+   'PYMODULE'),
+  ('PIL.WalImageFile',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\WalImageFile.py',
    'PYMODULE'),
   ('PIL.WebPImagePlugin',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -300,6 +352,10 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\XpmImagePlugin.py',
    'PYMODULE'),
+  ('PIL.__main__',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\__main__.py',
+   'PYMODULE'),
   ('PIL._binary',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\_binary.py',
@@ -307,6 +363,10 @@
   ('PIL._deprecate',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\_deprecate.py',
+   'PYMODULE'),
+  ('PIL._tkinter_finder',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\_tkinter_finder.py',
    'PYMODULE'),
   ('PIL._typing',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
@@ -323,6 +383,10 @@
   ('PIL.features',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\features.py',
+   'PYMODULE'),
+  ('PIL.report',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\PIL\\report.py',
    'PYMODULE'),
   ('__future__', 'C:\\python\\python3.14.3\\Lib\\__future__.py', 'PYMODULE'),
   ('_aix_support',
@@ -591,6 +655,30 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_ntuples.py',
    'PYMODULE'),
+  ('psutil._psaix',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_psaix.py',
+   'PYMODULE'),
+  ('psutil._psbsd',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_psbsd.py',
+   'PYMODULE'),
+  ('psutil._pslinux',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_pslinux.py',
+   'PYMODULE'),
+  ('psutil._psosx',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_psosx.py',
+   'PYMODULE'),
+  ('psutil._psposix',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_psposix.py',
+   'PYMODULE'),
+  ('psutil._pssunos',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_pssunos.py',
+   'PYMODULE'),
   ('psutil._pswindows',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\.venv\\Lib\\site-packages\\psutil\\_pswindows.py',
@@ -690,8 +778,17 @@
   ('tkinter.constants',
    'C:\\python\\python3.14.3\\Lib\\tkinter\\constants.py',
    'PYMODULE'),
+  ('tkinter.dialog',
+   'C:\\python\\python3.14.3\\Lib\\tkinter\\dialog.py',
+   'PYMODULE'),
+  ('tkinter.filedialog',
+   'C:\\python\\python3.14.3\\Lib\\tkinter\\filedialog.py',
+   'PYMODULE'),
   ('tkinter.messagebox',
    'C:\\python\\python3.14.3\\Lib\\tkinter\\messagebox.py',
+   'PYMODULE'),
+  ('tkinter.simpledialog',
+   'C:\\python\\python3.14.3\\Lib\\tkinter\\simpledialog.py',
    'PYMODULE'),
   ('tkinter.ttk', 'C:\\python\\python3.14.3\\Lib\\tkinter\\ttk.py', 'PYMODULE'),
   ('token', 'C:\\python\\python3.14.3\\Lib\\token.py', 'PYMODULE'),
@@ -705,6 +802,10 @@
   ('ui.constants',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\ui\\constants.py',
+   'PYMODULE'),
+  ('ui.custom_dialogs',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\ui\\custom_dialogs.py',
    'PYMODULE'),
   ('ui.dialogs',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '

@@ -1,12 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
+
+datas = [('Singularity-Engine.ico', '.'), ('Singularity-Engine2.png', '.')]
+hiddenimports = ['psutil', 'pystray', 'PIL', 'pywinstyles']
+datas += collect_data_files('pywinstyles')
+hiddenimports += collect_submodules('psutil')
+hiddenimports += collect_submodules('pystray')
+hiddenimports += collect_submodules('PIL')
 
 
 a = Analysis(
     ['main.py'],
-    pathex=['.venv/Lib/site-packages'],
+    pathex=[],
     binaries=[],
-    datas=[('Singularity-Engine.ico', '.'), ('Singularity-Engine2.png', '.')],
-    hiddenimports=['psutil', 'pystray', 'PIL', 'pywinstyles'],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

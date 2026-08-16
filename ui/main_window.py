@@ -61,7 +61,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SingularityEngine.1")
         except Exception:
             pass
-        self.VERSION = "1.86"
+        self.VERSION = "2.04"
         self.tray_icon = None
         self._tray_thread = None
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
