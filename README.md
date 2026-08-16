@@ -208,7 +208,7 @@ Singularity-Engine/
 └── requirements.txt        # зависимости Python
 ```
 
----
+
 
 ## 📄 Лицензия
 
