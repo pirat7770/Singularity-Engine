@@ -95,18 +95,24 @@
 2. Выполните сборку:
 
    ```bash
-   python -m PyInstaller \
-     --onefile \
-     --windowed \
-     --name SingularityEngine \
-     --icon Singularity-Engine.ico \
-     --add-data "Singularity-Engine.ico;." \
-     --add-data "Singularity-Engine2.png;." \
-     --hidden-import=psutil \
-     --hidden-import=pystray \
-     --hidden-import=PIL \
-     --hidden-import=pywinstyles \
-     main.py
+   python -m PyInstaller `
+  --onefile `
+  --windowed `
+  --name SingularityEngine `
+  --icon "Singularity-Engine.ico" `
+  --add-data "Singularity-Engine.ico;." `
+  --add-data "Singularity-Engine2.png;." `
+  --hidden-import=psutil `
+  --hidden-import=pystray `
+  --hidden-import=PIL `
+  --hidden-import=pywinstyles `
+  --collect-submodules psutil `
+  --collect-submodules pystray `
+  --collect-submodules PIL `
+  --collect-data pywinstyles `
+  --clean `
+  --noconfirm `
+  main.py
    ```
 
    Результат будет в папке `dist/SingularityEngine.exe`.
@@ -165,6 +171,3 @@ MIT License. Подробности см. в файле [LICENSE](LICENSE).
 **Примечание:**  
 Для обновления программы на GitHub используйте теги вида `v1.56`, а в `main_window.py` указывайте `self.VERSION = "1.56"`.  
 При изменении кода не забывайте обновлять релиз.
-```
-
-Этот README можно сразу использовать в вашем репозитории. При необходимости скорректируйте ссылку на репозиторий и имя пользователя.
