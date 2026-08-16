@@ -3,6 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+def get_data_dir():
+    """Возвращает папку для хранения данных приложения."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    data_dir = base / "SingularityEngine"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
 
 def hidden_startupinfo():
     if sys.platform == "win32":

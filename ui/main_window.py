@@ -15,8 +15,8 @@ import zipfile
 from pathlib import Path
 from collections import deque
 import ctypes
-import socket
-import webbrowser
+import zipfile
+import os
 import pystray
 from PIL import Image, ImageDraw
 import threading
@@ -74,6 +74,21 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if png_icon.exists():
             self.iconphoto(True, tk.PhotoImage(file=str(png_icon)))
 
+        # --- Инициализация атрибутов, используемых в self.log() ---
+        # Эти две строки обязательно должны быть до первого вызова self.log()
+        self._current_instance_id = None
+        self._log_history = deque(maxlen=10000)
+        # -----------------------------------------------------------
+
+        self.TOOL_HASHES = {
+            "python-3.14.7-amd64.exe": "9d9eb2709ef81bf5cd30db3c2096bdbc4ea10087c22e62f27d356b36f6ae9649",
+            "python-3.14.7-arm64.exe": "9a3fe120cc81bc2cb099550f794d8356811f96a86c7f438519243c3485db928d",
+            "Git-2.55.0.3-64-bit.exe": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca",
+            "Git-2.55.0.3-arm64.exe": "e3d7f5a2214f214f0a93cf0d8915dab236a0e91c7de6de70a7dbde9a61c794db",
+            "dotnet-sdk-10.0.302-win-x64.exe": "b2618a69a4ae385eb03bde0de89468881318c6338b14e67574d691e145a7ce1c",
+            "dotnet-sdk-10.0.302-win-arm64.exe": "bedf0d3ae61284252db8012dab3809879fb6d9721335414b68992d32a6da20bb",
+        }
+
         if PY_WINSTYLES:
             try:
                 pywinstyles.apply_style(self, "dark")
@@ -115,15 +130,41 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         style.configure("TPanedwindow", background="#2b2b2b")
         style.configure("TPanedwindow", sashrelief="flat", sashwidth=4, sashpad=0)
 
+        from utils.system import get_data_dir
+        self.data_dir = get_data_dir()
+        self.CONFIG_FILE = self.data_dir / "config.json"
+
         self.config_manager = ConfigManager(self.CONFIG_FILE)
         self.download_manager = DownloadManager()
 
-        self.builds_dir = Path.cwd() / "builds"
-        self.builds_dir.mkdir(exist_ok=True)
-
         self.settings = self.config_manager.data.get("settings", self.config_manager.default_settings())
         self.repositories = self.config_manager.data.get("repositories", self.config_manager.default_repositories())
-        self.log_filters = self.config_manager.data.get("log_filters", {"client": True, "server": True, "manager": True})
+        self.log_filters = self.config_manager.data.get("log_filters",
+                                                        {"client": True, "server": True, "manager": True})
+
+        # Определяем корневую папку сборок
+        configured_builds_dir = self.settings.get("builds_dir", "")
+        if configured_builds_dir:
+            self.builds_dir = Path(configured_builds_dir)
+        else:
+            self.builds_dir = self.data_dir / "builds"
+        self.builds_dir.mkdir(parents=True, exist_ok=True)
+        self.cleanup_unused_git_cache()
+        self.cleanup_old_download_cache()
+        # Перенос старых данных (если есть)
+        legacy_config = Path.cwd() / "config.json"
+        if legacy_config.exists() and not self.CONFIG_FILE.exists():
+            import shutil
+            self.log("🔄 Перенос данных в новую папку...", tag="info")
+            shutil.move(str(legacy_config), str(self.CONFIG_FILE))
+            legacy_builds = Path.cwd() / "builds"
+            if legacy_builds.exists() and not self.builds_dir.exists():
+                shutil.move(str(legacy_builds), str(self.builds_dir))
+            legacy_logs = Path.cwd() / "logs"
+            if legacy_logs.exists():
+                new_logs = self.data_dir / "logs"
+                if not new_logs.exists():
+                    shutil.move(str(legacy_logs), str(new_logs))
 
         self.after(100, self.check_required_tools)
 
@@ -139,6 +180,10 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._closing = False
         self._operation_procs = {}
         self._cancel_download = False
+        self._download_cancel_event = threading.Event()
+        self._download_start = 0
+        self._last_download_time = 0
+        self._last_download_bytes = 0
         self._last_download_log = -1
         self._operation_lock = False
 
@@ -167,33 +212,410 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.console.tag_config("done", foreground="#00ffaa", font=("Consolas", 10, "bold"))
         self.console.tag_config("cancel", foreground="#cc66cc")
 
+        # Серверные логи
+        self.console.tag_config("server", foreground="#ffaa00")
+        self.console.tag_config("server_warn", foreground="#ff6600")
+        self.console.tag_config("server_error", foreground="#ff2200", font=("Consolas", 10, "bold"))
+
+        # Клиентские логи
+        self.console.tag_config("client", foreground="#00ccff")
+        self.console.tag_config("client_warn", foreground="#00ffcc")
+        self.console.tag_config("client_error", foreground="#ff00aa", font=("Consolas", 10, "bold"))
+
         self.deiconify()
         self.bind("<Button-1>", self._on_global_click)
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self.bind_all("<Control-c>", self.copy_selection)
         self.bind_all("<Control-C>", self.copy_selection)
+        self.bind_all("<Control-v>", self._paste)
+        self.bind_all("<Control-V>", self._paste)
 
     # ================== Вспомогательные системные методы ==================
 
+    def cleanup_old_download_cache(self, days=30):
+        cache_dir = self.download_manager.cache_dir
+        if not cache_dir.exists():
+            return
+        now = time.time()
+        for f in cache_dir.iterdir():
+            if f.is_file() and (now - f.stat().st_mtime) > days * 86400:
+                try:
+                    f.unlink()
+                    self.log(f"🧹 Удалён устаревший файл кэша: {f.name}", tag="info")
+                except Exception:
+                    pass
+
+    def cleanup_unused_git_cache(self):
+        """Удаляет git-кэши для сборок, отсутствующих в репозиториях."""
+        git_cache_dir = Path(self.builds_dir) / ".git_cache"
+        if not git_cache_dir.exists():
+            return
+        existing_repos = set(self.repositories.keys())
+        for cache_name in [d.name for d in git_cache_dir.iterdir() if d.is_dir()]:
+            if cache_name not in existing_repos:
+                self._fast_remove_folder(str(git_cache_dir / cache_name), f"git-кэш {cache_name}")
+                self.log(f"🧹 Удалён неиспользуемый git-кэш: {cache_name}", tag="info")
+
+    def _verify_installer_signature(self, file_path):
+        """Проверяет, что установщик имеет действительную цифровую подпись Authenticode."""
+        if not self.settings.get("verify_installer_signature", True):
+            return True
+        try:
+            ps_script = f"$sig = Get-AuthenticodeSignature -FilePath '{file_path}'; if ($sig.Status -eq 'Valid') {{ 'Valid' }} else {{ 'Invalid' }}"
+            ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            if not os.path.exists(ps_path):
+                ps_path = "powershell.exe"
+            result = subprocess.run([ps_path, "-Command", ps_script], capture_output=True, text=True, timeout=15)
+            return "Valid" in result.stdout
+        except Exception as e:
+            self.log(f"⚠ Не удалось проверить цифровую подпись: {e}", tag="warn")
+            return False
+
+    def confirm_exit_if_running(self):
+        """Возвращает True, если можно закрыть программу (нет активных процессов или пользователь подтвердил)."""
+        active = []
+        for inst in self._instances.values():
+            srv = inst.get("srv")
+            cli = inst.get("cli")
+            if (srv and srv.poll() is None) or (cli and cli.poll() is None):
+                active.append(inst["name"])
+        if active:
+            names = ", ".join(set(active))
+            return messagebox.askyesno(
+                "Завершение работы",
+                f"Следующие сборки ещё запущены:\n{names}\n\n"
+                "Все связанные процессы будут остановлены.\nПродолжить?",
+                icon='warning'
+            )
+        return True
+
+    def notify_tray(self, title, message):
+        """Показывает уведомление в трее, если иконка доступна."""
+        if self.tray_icon is not None and hasattr(self.tray_icon, 'notify'):
+            try:
+                self.tray_icon.notify(message, title)
+            except Exception:
+                pass  # не критично
+
+    def _paste(self, event=None):
+        widget = self.focus_get()
+        if isinstance(widget, (tk.Entry, tk.Text)):
+            widget.event_generate("<<Paste>>")
+            return "break"
+        return None
+
+    def _safe_progress_config(self, **kwargs):
+        self.after(0, lambda: self.progress_bar.config(**kwargs))
+
+    def _safe_progress_set(self, value):
+        self.after(0, lambda: self.progress_var.set(value))
+
+    def _safe_speed_set(self, text):
+        self.after(0, lambda: self.lbl_speed.config(text=text))
+
+    def _escape_powershell_arg(self, value):
+        """Экранирует строку для безопасной вставки в команду PowerShell."""
+        if not isinstance(value, str):
+            value = str(value)
+        # Удаляем кавычки, затем экранируем амперсанды и обратные слэши
+        value = value.replace('"', '\\"')
+        value = value.replace('&', '`&')
+        return f'"{value}"'
+
     def _on_window_close(self):
-        """Обрабатывает нажатие на крестик."""
         if self.settings.get("minimize_to_tray", True):
             self._hide_to_tray()
         else:
-            self._on_closing()
+            if self.confirm_exit_if_running():
+                self._on_closing()
 
     def check_for_updates(self):
-        """Проверяет наличие новых релизов на GitHub и уведомляет пользователя."""
-        from utils.updater import get_latest_release, GITHUB_REPO
-        latest = get_latest_release()
-        if latest:
-            latest_version = latest.lstrip("v")
-            if latest_version != self.VERSION:
-                self.log(f"Доступна новая версия: {latest}", tag="done")
-                if messagebox.askyesno("Обновление",
-                                       f"Найдена новая версия {latest}.\nОткрыть страницу релиза?"):
-                    import webbrowser
-                    webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
+        """Проверяет наличие новых релизов на GitHub и при необходимости обновляет."""
+        from utils.updater import get_latest_release_asset, GITHUB_REPO
+        latest, asset_url, asset_type = get_latest_release_asset()
+        if latest is None:
+            return
+        latest_version = latest.lstrip("v")
+        if latest_version == self.VERSION:
+            return
+
+        self.log(f"Доступна новая версия: {latest}", tag="done")
+        self.notify_tray("Доступно обновление", f"Версия {latest} уже доступна.")
+
+        if self.settings.get("auto_update", False):
+            self.log("🔄 Автоматическое обновление включено. Скачиваю и устанавливаю...", tag="bold")
+            if asset_url:
+                self._download_and_run_update(asset_url, latest, asset_type)
+            else:
+                self.log("⚠ Не найден файл для обновления.", tag="warn")
+            return
+
+        # Обычный режим: спрашиваем пользователя
+        if not asset_url:
+            if messagebox.askyesno("Обновление",
+                                   f"Найдена новая версия {latest}.\nОткрыть страницу релиза?"):
+                import webbrowser
+                webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
+            return
+
+        choice = messagebox.askyesnocancel(
+            "Обновление",
+            f"Найдена новая версия {latest}.\n\n"
+            "Нажмите «Да», чтобы скачать и установить обновление.\n"
+            "Нажмите «Нет», чтобы открыть страницу релиза.\n"
+            "Нажмите «Отмена», чтобы отложить."
+        )
+        if choice is None:
+            return
+        if choice:
+            self._download_and_run_update(asset_url, latest, asset_type)
+        else:
+            import webbrowser
+            webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
+
+    def _download_and_run_update(self, url, version, asset_type):
+        """Скачивает новый файл (exe или zip) и запускает обновление."""
+        self.log(f"⬇ Скачивание обновления {version}...", tag="bold")
+        self.progress_bar.config(mode="determinate")
+        self.progress_var.set(0)
+        self.lbl_speed.config(text="Загрузка обновления...")
+
+        def download_thread():
+            try:
+                self._download_cancel_event.clear()
+                dest_name = f"SingularityEngine-{version}.{asset_type}"
+                file_path = self.download_manager.download(
+                    url, dest_name,
+                    progress_callback=self._download_progress,
+                    cancel_event=self._download_cancel_event
+                )
+                if not file_path:
+                    raise Exception("Не удалось скачать обновление")
+
+                # Распаковка/определение исполняемого файла
+                launcher_exe = None
+                if asset_type == "exe":
+                    launcher_exe = file_path
+                elif asset_type == "zip":
+                    import zipfile, tempfile, os
+                    extract_dir = tempfile.mkdtemp(prefix="singularity_update_")
+                    with zipfile.ZipFile(file_path, 'r') as zf:
+                        zf.extractall(extract_dir)
+                    for root, dirs, files in os.walk(extract_dir):
+                        for f in files:
+                            if f.endswith(".exe"):
+                                launcher_exe = os.path.join(root, f)
+                                break
+                        if launcher_exe:
+                            break
+                    if not launcher_exe:
+                        raise Exception("В архиве не найден исполняемый файл")
+
+                # Проверяем подпись после того, как launcher_exe определён
+                if not self._verify_installer_signature(str(launcher_exe)):
+                    self.log("❌ Цифровая подпись обновления недействительна.", tag="error")
+                    return
+
+                self.log("✅ Обновление скачано. Запускаю установщик...", tag="success")
+                subprocess.Popen([str(launcher_exe)])
+                self.after(2000, self._on_closing)
+
+            except Exception as e:
+                self.log(f"❌ Ошибка при обновлении: {e}", tag="error")
+            finally:
+                self.after(0, self.progress_bar.stop)
+                self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+                self.after(0, lambda: self.progress_var.set(0))
+                self.after(0, lambda: self.lbl_speed.config(text="0.00 MiB/s"))
+
+        threading.Thread(target=download_thread, daemon=True).start()
+
+    def _install_tool_blocking(self, name, url) -> bool:
+        """Синхронно скачивает и устанавливает Python или Git. Возвращает True при успехе."""
+        operation_name = f"Установка {name}..."
+        self._start_operation(operation_name, operation_name, progress_mode="determinate")
+        self._download_start = time.time()
+        self._last_download_time = 0
+        self._last_download_bytes = 0
+        self.log(f"⬇ Подготовка загрузки {name}...", tag="bold")
+        # Безопасное обновление GUI
+        self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+        self.after(0, lambda: self.progress_var.set(0))
+        self.after(0, lambda: self.lbl_speed.config(text=f"Загрузка {name}..."))
+        dest_name = url.split("/")[-1]
+
+        try:
+            self._last_download_log = -1
+            self._download_start = time.time()
+            self._download_cancel_event.clear()
+            # Получаем хеш, если он есть в словаре (можно оставить None)
+            expected_hash = getattr(self, "TOOL_HASHES", {}).get(dest_name)
+            installer_path = self.download_manager.download(
+                url, dest_name,
+                progress_callback=self._download_progress,
+                cancel_event=self._download_cancel_event,
+                expected_sha256=expected_hash
+            )
+            if self._cancel_download or self._download_cancel_event.is_set():
+                self.log("🛑 Установка отменена пользователем.", tag="warn")
+                return False
+            if not self._verify_installer_signature(installer_path):
+                self.log("❌ Цифровая подпись установщика недействительна. Установка отменена.", tag="error")
+                return False
+
+            ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            if not os.path.exists(ps_path):
+                ps_path = "powershell.exe"
+
+            silent_args = ""
+            if name == "Python":
+                silent_args = "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+            elif name == "Git":
+                silent_args = "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES"
+
+            safe_path = self._escape_powershell_arg(installer_path)
+            ps_args = [ps_path, "-Command",
+                       f'Start-Process -FilePath {safe_path} -ArgumentList "{silent_args}" -Verb RunAs -Wait']
+            self.log(f"🔧 Запуск установщика {name}...", tag="bold")
+            # Запуск установщика с поддержкой отмены
+            proc = subprocess.Popen(ps_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, startupinfo=self._hidden_startupinfo())
+            self._operation_procs.setdefault(operation_name, []).append(proc)
+            while proc.poll() is None:
+                if self._cancel_download or self._download_cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    self.log("🛑 Установка прервана из-за отмены.", tag="warn")
+                    return False
+                time.sleep(1)
+
+            if proc.returncode != 0:
+                self.log(
+                    f"❌ Установка {name} не была завершена (код {proc.returncode}). "
+                    f"Возможно, отменён запрос UAC.", tag="error")
+                return False
+
+            self.log(f"⏳ Установка {name} завершена.", tag="bold")
+
+            # Проверяем установку
+            if name == "Python":
+                self._refresh_system_path()
+                if self._is_python_installed():
+                    self.log("✅ Python успешно установлен и добавлен в PATH.", tag="success")
+                    return True
+                else:
+                    self.log("⚠ Python не найден в PATH после установки.", tag="warn")
+                    return False
+            elif name == "Git":
+                if self._is_tool_installed("git"):
+                    self.log("✅ Git успешно установлен.", tag="success")
+                    return True
+                else:
+                    self.log("⚠ Git не найден в PATH после установки.", tag="warn")
+                    return False
+
+        except Exception as e:
+            self.log(f"❌ Ошибка при работе с {name}: {e}", tag="error")
+            return False
+        finally:
+            self.after(0, self.progress_bar.stop)
+            self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+            self.after(0, lambda: self.progress_var.set(0))
+            self.after(0, lambda: self.lbl_speed.config(text="0.00 MiB/s"))
+            self._end_operation(operation_name)
+
+    def _install_sdk_blocking(self, version) -> bool:
+        """Синхронно скачивает и устанавливает .NET SDK. Возвращает True при успехе."""
+        operation_name = f"Установка .NET SDK {version}..."
+        self._start_operation(operation_name, operation_name, progress_mode="determinate")
+        self._download_start = time.time()
+        self._last_download_time = 0
+        self._last_download_bytes = 0
+        url = self._get_dotnet_sdk_url(version)
+        self.log(f"⬇ Начинаю загрузку .NET SDK {version}...", tag="bold")
+        self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+        self.after(0, lambda: self.progress_var.set(0))
+        self.after(0, lambda: self.lbl_speed.config(text=f"Загрузка SDK {version}..."))
+
+        try:
+            self._last_download_log = -1
+            self._download_start = time.time()
+            self._download_cancel_event.clear()
+            dest_name = f"dotnet-sdk-{version}-{platform.machine().lower()}.exe"
+            expected_hash = getattr(self, "TOOL_HASHES", {}).get(dest_name)
+            installer_path = self.download_manager.download(
+                url, dest_name,
+                progress_callback=self._download_progress,
+                cancel_event=self._download_cancel_event,
+                expected_sha256=expected_hash
+            )
+            if self._cancel_download or self._download_cancel_event.is_set():
+                self.log("🛑 Установка отменена пользователем.", tag="warn")
+                return False
+            if not installer_path:
+                raise Exception("Не удалось скачать SDK")
+
+            # Проверка цифровой подписи
+            if not self._verify_installer_signature(installer_path):
+                self.log("❌ Цифровая подпись установщика недействительна. Установка отменена.", tag="error")
+                return False
+
+            ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            if not os.path.exists(ps_path):
+                ps_path = "powershell.exe"
+            silent_args = "/quiet /norestart"
+            safe_path = self._escape_powershell_arg(installer_path)
+            ps_args = [ps_path, "-Command",
+                       f'Start-Process -FilePath {safe_path} -ArgumentList "{silent_args}" -Verb RunAs -Wait']
+            self.log(f"🔧 Запуск установщика .NET SDK {version}...", tag="bold")
+
+            proc = subprocess.Popen(ps_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, startupinfo=self._hidden_startupinfo())
+            self._operation_procs.setdefault(operation_name, []).append(proc)
+
+            while proc.poll() is None:
+                if self._cancel_download or self._download_cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    self.log("🛑 Установка прервана из-за отмены.", tag="warn")
+                    return False
+                time.sleep(1)
+
+            if proc in self._operation_procs.get(operation_name, []):
+                self._operation_procs[operation_name].remove(proc)
+
+            if proc.returncode != 0:
+                self.log(f"❌ Установка .NET SDK {version} не была завершена (код {proc.returncode}). "
+                         f"Возможно, отменён запрос UAC.", tag="error")
+                return False
+
+            self.log(f"⏳ Установка .NET SDK {version} завершена.", tag="bold")
+            self._refresh_system_path()
+
+            installed = self._get_installed_sdks()
+            if version in installed:
+                self.log(f"✅ .NET SDK {version} успешно установлена.", tag="success")
+                return True
+            else:
+                self.log(f"⚠ Версия {version} не обнаружена после установки. "
+                         f"Возможно, требуется перезапуск менеджера.", tag="warn")
+                return False
+
+        except Exception as e:
+            self.log(f"❌ Ошибка при работе с .NET SDK: {e}", tag="error")
+            return False
+        finally:
+            self.after(0, self.progress_bar.stop)
+            self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+            self.after(0, lambda: self.progress_var.set(0))
+            self.after(0, lambda: self.lbl_speed.config(text="0.00 MiB/s"))
+            self._end_operation(operation_name)
 
     def _cleanup_broken_port_config(self, build_path):
         paths = [
@@ -301,6 +723,19 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if self._current_instance_id and self._current_instance_id in self._instances:
             self.instance_tree.selection_set(self._current_instance_id)
 
+    def _configure_git_for_stability(self):
+        """Настраивает Git для устойчивой работы при медленном соединении."""
+        try:
+            subprocess.run(["git", "config", "--global", "http.postBuffer", "524288000"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            subprocess.run(["git", "config", "--global", "http.lowSpeedLimit", "0"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            subprocess.run(["git", "config", "--global", "http.lowSpeedTime", "999999"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            self.log("🔧 Git настроен для устойчивой работы (увеличен буфер, отключены таймауты).", tag="info")
+        except Exception as e:
+            self.log(f"⚠ Не удалось применить настройки Git: {e}", tag="warn")
+
     def _refresh_system_path(self):
         try:
             import winreg
@@ -329,8 +764,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                         proc.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         proc.kill()
-            except Exception:
-                pass
+            except Exception as e:
+                self.log(f"⚠ Ошибка при завершении процесса: {e}", tag="warn")
         for instance_id, inst in self._instances.items():
             for p in (inst["srv"], inst["cli"]):
                 if p and p.poll() is None:
@@ -340,8 +775,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                     except:
                         try:
                             p.kill()
-                        except:
-                            pass
+                        except Exception as e:
+                            self.log(f"⚠ Ошибка при завершении процесса: {e}", tag="warn")
             for t in inst["threads"]:
                 if t.is_alive():
                     t.join(timeout=1)
@@ -456,58 +891,65 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             self._create_tray_icon()
 
     def _exit_from_tray(self):
-        """Полностью завершает программу из трея."""
         if self.tray_icon:
             self.tray_icon.stop()
-        self.after(0, self._on_closing)
+        self.after(0, lambda: self._on_closing() if self.confirm_exit_if_running() else None)
 
-    # ================== Установка зависимостей ==================
-    def _offer_sdk_install_before_build(self, required_version, build_name, build_path):
-        if self.settings.get("auto_install_deps", False):
-            self.log(f"Автоматическая установка .NET SDK {required_version}...", tag="bold")
-            self._download_and_install_sdk(required_version, build_name, build_path)
-            return True
-        else:
-            msg = (f"Для сборки '{build_name}' требуется .NET SDK {required_version}, "
-                   "которая не установлена.\n\n"
-                   "Программа может автоматически скачать и установить её сейчас.\n\n"
-                   "Продолжить?")
-            if messagebox.askyesno("Требуется .NET SDK", msg):
-                self._download_and_install_sdk(required_version, build_name, build_path)
-                return True
-            else:
-                self.log("⚠ Сборка отменена из-за отсутствия требуемой версии SDK.", tag="warn")
-                return False
-
-    def _offer_python_install(self):
-        url = self._get_python_installer_url()
-        msg = ("Для работы требуется Python.\n\n"
-               "Хотите автоматически скачать и установить его?\n\n"
-               "⚠️ ВАЖНО: При установке обязательно отметьте опцию "
-               '"Add python.exe to PATH"!')
-        if messagebox.askyesno("Установка Python", msg):
-            self._download_and_run_installer("Python", url)
+    def _auto_install_sequence(self, tools):
+        for name, url in tools:
+            if name == "Python":
+                self._install_tool_blocking(name, url)
+            elif name == "Git":
+                self._install_tool_blocking(name, url)
+            elif ".NET SDK" in name:
+                # URL содержит версию, но мы передаём версию из name
+                # В данном случае url – это версия (например "10.0.302")
+                self._install_sdk_blocking(url)
+            time.sleep(2)  # небольшая пауза между установками
 
     def check_required_tools(self):
+        """Проверяет наличие необходимых инструментов и при необходимости запускает автоустановку."""
+        if not self.settings.get("auto_install_deps", False):
+            # Режим без автоустановки: только информируем
+            missing = []
+            if not self._is_tool_installed("git"):
+                missing.append("Git")
+            if not self._is_python_installed():
+                self.log("⚠ Python не найден.", tag="warn")
+                return
+            if not self._is_tool_installed("dotnet"):
+                missing.append(".NET SDK")
+            else:
+                installed = self._get_installed_sdks()
+                has_compatible = any(v.startswith("9.") or v.startswith("10.") for v in installed)
+                if not has_compatible:
+                    missing.append(".NET SDK 9/10")
+            if missing:
+                self.log("Не найдены: " + ", ".join(missing), tag="warn")
+                self.log("Вы можете установить их через меню 'Репозитории' → 'Установить недостающие инструменты'.",
+                         tag="info")
+            else:
+                self.log("✅ Все необходимые инструменты найдены.", tag="success")
+            return
+
+        # Автоматический режим
         missing = []
         if not self._is_tool_installed("git"):
-            missing.append("Git")
+            missing.append(("Git", self._get_git_url()))
         if not self._is_python_installed():
-            self.log("⚠ Python не найден. Для установки откройте настройки (⚙) или меню «Репозитории».", tag="warn")
-            self.log("💡 При установке Python обязательно отметьте 'Add python.exe to PATH'.", tag="bold")
-            return
+            missing.append(("Python", self._get_python_installer_url()))
         if not self._is_tool_installed("dotnet"):
-            missing.append(".NET SDK")
+            missing.append((".NET SDK", "10.0.302"))
         else:
             installed = self._get_installed_sdks()
             has_compatible = any(v.startswith("9.") or v.startswith("10.") for v in installed)
             if not has_compatible:
-                missing.append(".NET SDK 9/10")
+                missing.append((".NET SDK 9/10", "10.0.302"))
 
         if missing:
-            msg = "Не найдены: " + ", ".join(missing)
-            self.log(msg, tag="warn")
-            self.log("Вы можете установить их через меню 'Репозитории' → 'Установить недостающие инструменты'.", tag="info")
+            self.log(f"🔧 Отсутствуют инструменты: {', '.join(n for n, _ in missing)}", tag="warn")
+            self.log("🚀 Начинаю автоматическую установку...", tag="bold")
+            threading.Thread(target=self._auto_install_sequence, args=(missing,), daemon=True).start()
         else:
             self.log("✅ Все необходимые инструменты найдены.", tag="success")
 
@@ -516,8 +958,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if not self._is_tool_installed("git"):
             missing.append(("Git", self._get_git_url()))
         if not self._is_python_installed():
-            self._offer_python_install()
-            return
+            missing.append(("Python", self._get_python_installer_url()))
         if not self._is_tool_installed("dotnet"):
             missing.append((".NET SDK", "10.0.302"))
         else:
@@ -528,67 +969,114 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if not missing:
             messagebox.showinfo("Информация", "Все необходимые инструменты уже установлены.")
             return
-        msg = "Будут установлены:\n\n" + "\n".join(f"• {n}" for n, _ in missing)
-        msg += "\n\nПродолжить?"
-        if messagebox.askyesno("Установка зависимостей", msg):
-            for name, url in missing:
-                if "SDK" in name:
-                    self._download_and_install_sdk(url, None, None)
-                else:
-                    self._download_and_run_installer(name, url)
+
+        if not self.settings.get("auto_install_deps", False):
+            msg = "Будут установлены:\n\n" + "\n".join(f"• {n}" for n, _ in missing)
+            msg += "\n\nПродолжить?"
+            if not messagebox.askyesno("Установка зависимостей", msg):
+                return
+
+        # Запускаем установку последовательно (каждый инструмент в своём потоке, но они всё равно параллельны из-за внутренних потоков)
+        for name, url in missing:
+            if "SDK" in name:
+                self._download_and_install_sdk(url, None, None)
+            else:
+                self._download_and_run_installer(name, url)
 
     def _download_and_run_installer(self, name, url):
+        operation_name = f"Установка {name}..."
+        self._start_operation(operation_name, operation_name, progress_mode="determinate")
+        self._download_start = time.time()
+        self._last_download_time = 0
+        self._last_download_bytes = 0
         self.log(f"⬇ Подготовка загрузки {name}...", tag="bold")
-        self.progress_bar.config(mode="determinate")
-        self.progress_var.set(0)
-        self.lbl_speed.config(text=f"Загрузка {name}...")
+        self._safe_progress_config(mode="determinate")
+        self._safe_progress_set(0)
+        self._safe_speed_set(f"Загрузка {name}...")
+        if self._cancel_download or self._download_cancel_event.is_set():
+            self.log("🛑 Установка отменена пользователем.", tag="warn")
+            return
         dest_name = url.split("/")[-1]
 
         def download_thread():
             try:
                 self._last_download_log = -1
                 self._download_start = time.time()
+                self._download_cancel_event.clear()
+                expected_hash = getattr(self, "TOOL_HASHES", {}).get(dest_name)
                 installer_path = self.download_manager.download(
-                    url, dest_name, progress_callback=self._download_progress
+                    url, dest_name,
+                    progress_callback=self._download_progress,
+                    cancel_event=self._download_cancel_event,
+                    expected_sha256=expected_hash
                 )
                 if not installer_path:
                     raise Exception("Не удалось скачать установщик")
 
+                # Проверка отмены после загрузки
+                if self._cancel_download or self._download_cancel_event.is_set():
+                    self.log("🛑 Установка отменена пользователем.", tag="warn")
+                    return
+
                 ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
                 if not os.path.exists(ps_path):
                     ps_path = "powershell.exe"
+                silent_args = ""
+                if name == "Python":
+                    silent_args = "/quiet InstallAllUsers=1 PrependPath=1 Include_test=0"
+                elif name == "Git":
+                    silent_args = "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES"
+
+                safe_path = self._escape_powershell_arg(installer_path)
                 ps_args = [ps_path, "-Command",
-                           f'Start-Process -FilePath "{installer_path}" -Verb RunAs -Wait']
+                           f'Start-Process -FilePath {safe_path} -ArgumentList "{silent_args}" -Verb RunAs -Wait']
+                if not self._verify_installer_signature(installer_path):
+                    self.log("❌ Цифровая подпись установщика недействительна. Установка отменена.", tag="error")
+                    return
                 self.log(f"🔧 Запуск установщика {name}...", tag="bold")
-                result = subprocess.run(ps_args, startupinfo=self._hidden_startupinfo(),
-                                        capture_output=True, text=True)
-                if result.returncode != 0:
-                    self.log(f"❌ Установка {name} не была завершена (код {result.returncode}). "
+                # Запуск с поддержкой отмены
+                proc = subprocess.Popen(ps_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True, startupinfo=self._hidden_startupinfo())
+                self._operation_procs.setdefault(operation_name, []).append(proc)  # <-- сохраняем процесс
+
+                while proc.poll() is None:
+                    if self._cancel_download or self._download_cancel_event.is_set():
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        self.log("🛑 Установка прервана из-за отмены.", tag="warn")
+                        return
+                    time.sleep(1)
+
+                # Удаляем процесс из списка после завершения
+                if proc in self._operation_procs.get(operation_name, []):
+                    self._operation_procs[operation_name].remove(proc)
+
+                if proc.returncode != 0:
+                    self.log(f"❌ Установка {name} не была завершена (код {proc.returncode}). "
                              f"Возможно, отменён запрос UAC.", tag="error")
                     return
 
                 self.log(f"⏳ Установка {name} завершена.", tag="bold")
+
+                # Проверка установки
                 if name == "Python":
-                    if not self._is_python_installed():
-                        self.log("⚠ Python не найден в PATH после установки.", tag="warn")
-                        messagebox.showwarning(
-                            "Требуется переустановка Python",
-                            "Python был установлен, но не добавлен в системный PATH.\n\n"
-                            "Для корректной работы менеджера:\n"
-                            "1. Запустите установщик Python ещё раз.\n"
-                            "2. Обязательно отметьте галочку 'Add python.exe to PATH'.\n"
-                            "3. После установки перезапустите это приложение.\n\n"
-                            "Либо добавьте путь к python.exe вручную в переменные среды."
-                        )
+                    self._refresh_system_path()
+                    if self._is_python_installed():
+                        self.log("✅ Python успешно установлен и добавлен в PATH.", tag="success")
                     else:
-                        self.log("✅ Python успешно установлен и доступен в PATH.", tag="success")
+                        self.log("⚠ Python не найден в PATH после установки. "
+                                 "Возможно, потребуется перезапуск приложения.", tag="warn")
+                elif name == "Git":
+                    if self._is_tool_installed("git"):
+                        self.log("✅ Git успешно установлен.", tag="success")
+                    else:
+                        self.log("⚠ Git не найден в PATH после установки.", tag="warn")
 
                 self.log("💡 Для обновления системного PATH может потребоваться перезапуск менеджера.", tag="info")
-                if messagebox.askyesno("Перезагрузка компьютера",
-                                       f"Установка {name} завершена.\n\n"
-                                       "Для корректной работы рекомендуется перезагрузить компьютер.\n\n"
-                                       "Хотите перезагрузить сейчас?"):
-                    self._restart_computer()
+
             except Exception as e:
                 self.log(f"❌ Ошибка при работе с {name}: {e}", tag="error")
             finally:
@@ -596,6 +1084,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 self.after(0, lambda: self.progress_bar.config(mode="determinate"))
                 self.after(0, lambda: self.progress_var.set(0))
                 self.after(0, lambda: self.lbl_speed.config(text="0.00 MiB/s"))
+                self.after(0, lambda: self._end_operation(operation_name))
 
         threading.Thread(target=download_thread, daemon=True).start()
 
@@ -640,6 +1129,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._create_right_panel()
         self._create_status_bar()
         self.apply_theme(self.settings.get("theme", "Стандартная"))
+        from ui.custom_dialogs import install_custom_messageboxes
+        install_custom_messageboxes(self)
         self.after(2000, self._auto_refresh_instances)
 
     def _create_menu_bar(self):
@@ -676,6 +1167,13 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         else:
             self._open_repo_menu()
 
+    def open_builds_folder(self):
+        """Открывает корневую папку со всеми сборками."""
+        if self.builds_dir.exists():
+            sys_open_path(self.builds_dir)
+        else:
+            messagebox.showinfo("Папка не найдена", f"Папка сборок не существует:\n{self.builds_dir}")
+
     def _open_repo_menu(self):
         self._close_repo_menu()
         t = self.THEMES.get(self.settings.get("theme", "Стандартная"))
@@ -687,6 +1185,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         commands = [
             ("Добавить", self.add_repository_dialog),
             ("Удалить", self.remove_repository_dialog),
+            ("Корневая папка", self.open_builds_folder),
             ("Очистить кэш", self.clear_cache),
             ("Установить недостающие инструменты", self.install_missing_tools),
         ]
@@ -1025,9 +1524,9 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self._active_operations.pop(name, None)
         self._operation_lock = False
         self.progress_bar.stop()
+        self.lbl_speed.config(text="0.00 MiB/s")
         self.progress_bar.config(mode="determinate")
         self.progress_var.set(0)
-        self.lbl_speed.config(text="0.00 MiB/s")
         self.after(0, self.refresh_builds_list)
         self.after(0, self._reenable_buttons)
         self.log(f"✔ Операция для '{name}' завершена", tag="done")
@@ -1038,16 +1537,16 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             self.log("⚠ На диске мало места. Сборка может завершиться ошибкой.", tag="warn")
 
     def stop_operation(self, name):
+        self._download_cancel_event.set()
         self._cancel_download = True
         if name not in self._active_operations:
             return
         self.log(f"🛑 Отмена операции для '{name}'...", tag="cancel")
 
-        # Завершаем все процессы операции, включая дочерние
+        # Завершаем процессы
         for proc in self._operation_procs.get(name, []):
             if proc.poll() is None:
                 try:
-                    # Убиваем дерево процессов через taskkill
                     subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                                    capture_output=True, text=True, timeout=10)
                 except Exception:
@@ -1056,21 +1555,20 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                     except Exception:
                         pass
 
-        # Дополнительно убиваем все процессы, связанные с папкой сборки
-        build_path = os.path.join(self.builds_dir, name)
-        self.kill_processes_locking_folder(build_path)
-
-        # Пауза для освобождения файлов
-        time.sleep(1)
-
-        # Удаляем папку
-        if not self._fast_remove_folder(build_path, name):
-            # Если не удалось, пробуем еще раз после задержки
-            time.sleep(2)
-            self._fast_remove_folder(build_path, name)
+        # Удаляем папку только если операция относится к сборке (имя есть в репозиториях)
+        if name in self.repositories:
+            build_path = os.path.join(self.builds_dir, name)
+            self.kill_processes_locking_folder(build_path)
+            time.sleep(1)
+            if not self._fast_remove_folder(build_path, name):
+                time.sleep(2)
+                self._fast_remove_folder(build_path, name)
+        else:
+            # Для системных операций просто ждём завершения процессов (уже убиты)
+            time.sleep(0.5)
 
         self._end_operation(name)
-        self.log(f"✅ Операция для '{name}' отменена, файлы удалены.", tag="success")
+        self.log(f"✅ Операция для '{name}' отменена.", tag="success")
 
     def log(self, text, tag="info"):
         self._log_history.append((text, tag))
@@ -1224,12 +1722,25 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             try:
                 self._last_download_log = -1
                 self._download_start = time.time()
-                zip_path = os.path.join(self.builds_dir, f"{name}.zip")
-                self._download_start = time.time()
-                urllib.request.urlretrieve(url, zip_path, self._download_progress)
+                self._download_cancel_event.clear()
+                zip_path = self.download_manager.download(
+                    url, dest_name=f"{name}.zip",
+                    progress_callback=self._download_progress,
+                    cancel_event=self._download_cancel_event
+                )
+                if not zip_path:
+                    raise Exception("Не удалось скачать архив")
                 self.log("✅ Загрузка завершена. Распаковка...", tag="success")
+                dest_dir = os.path.join(self.builds_dir, name)
+                dest_real = os.path.realpath(dest_dir)
+                os.makedirs(dest_dir, exist_ok=True)
+
                 with zipfile.ZipFile(zip_path, 'r') as zf:
-                    zf.extractall(os.path.join(self.builds_dir, name))
+                    for member in zf.infolist():
+                        member_path = os.path.realpath(os.path.join(dest_dir, member.filename))
+                        if not member_path.startswith(dest_real + os.sep):
+                            raise Exception(f"Опасный путь в архиве: {member.filename}")
+                    zf.extractall(dest_dir)
                 os.remove(zip_path)
                 self.log("✅ Готовая сборка установлена.", tag="success")
             except Exception as e:
@@ -1242,29 +1753,54 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         threading.Thread(target=_download, daemon=True).start()
 
     def _kill_process_on_port(self, port):
+        """Пытается освободить порт, но только если процесс относится к SS14/dotnet."""
+        allowed_kw = ('content.server', 'content.client', 'dotnet', 'ss14', 'robust')
+
         if PSUTIL_AVAILABLE:
-            for conn in psutil.net_connections(kind='tcp'):
-                if conn.laddr and conn.laddr.port == port and conn.status == 'LISTEN':
+            for conn in psutil.net_connections(kind='udp'):  # <-- изменено на udp
+                if conn.laddr and conn.laddr.port == port:
                     try:
-                        pid = conn.pid
-                        if pid:
-                            p = psutil.Process(pid)
-                            self.log(f"🛑 Завершение процесса {p.name()} (PID {pid}), занимающего порт {port}", tag="warn")
+                        p = psutil.Process(conn.pid)
+                        name = p.name().lower()
+                        if any(kw in name for kw in allowed_kw):
+                            self.log(f"🛑 Завершение процесса {p.name()} (PID {conn.pid}) с порта {port}", tag="warn")
                             p.kill()
                             return True
+                        else:
+                            self.log(f"⚠ Порт {port} занят процессом {p.name()} (PID {conn.pid}). "
+                                     f"Не буду его завершать, так как он не относится к игре.", tag="warn")
+                            return False
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
+
+        # Fallback через netstat и tasklist (если psutil недоступен)
         try:
-            output = subprocess.run(["netstat", "-ano"], capture_output=True, text=True,
+            output = subprocess.run(["netstat", "-ano", "-p", "udp"], capture_output=True, text=True,
                                     startupinfo=self._hidden_startupinfo()).stdout
             for line in output.splitlines():
-                if f":{port}" in line and "LISTENING" in line:
+                if f":{port}" in line:
                     parts = line.split()
+                    if not parts or not parts[-1].isdigit():
+                        continue
                     pid = int(parts[-1])
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True,
-                                   startupinfo=self._hidden_startupinfo())
-                    self.log(f"🛑 Завершён процесс (PID {pid}) с портом {port}", tag="warn")
-                    return True
+                    # Получаем полный вывод tasklist
+                    tasklist = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
+                                              capture_output=True, text=True,
+                                              startupinfo=self._hidden_startupinfo()).stdout
+                    process_name = ""
+                    for tl_line in tasklist.splitlines()[1:]:  # пропускаем заголовок
+                        if str(pid) in tl_line:
+                            process_name = tl_line.split()[0].lower()
+                            break
+                    if process_name and any(kw in process_name for kw in allowed_kw):
+                        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True,
+                                       startupinfo=self._hidden_startupinfo())
+                        self.log(f"🛑 Завершён процесс (PID {pid}) с портом {port}", tag="warn")
+                        return True
+                    else:
+                        self.log(f"⚠ Порт {port} занят процессом PID {pid} (не игровой). Не буду убивать.",
+                                 tag="warn")
+                        return False
         except Exception as e:
             self.log(f"⚠ Не удалось освободить порт {port}: {e}", tag="warn")
         return False
@@ -1281,16 +1817,26 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         status = self.get_build_status(name)
         running = self._is_game_running(name)
         # Если выполняется другая операция, разрешаем только запуск установленных сборок
-        if operation_running and name != active_operation_name:
-            self._set_buttons_state("disabled")  # отключаем все кнопки
-            if status == "installed":
-                # Разрешаем запуск и открытие папок
-                self.btn_run.config(text="Запустить", state="normal", command=self.toggle_game)
-                self.btn_open_folder.config(state="normal")
-                self.btn_open_upload.config(state="normal")
-            else:
-                self.btn_run.config(text="Запустить (Serv+Client)", state="disabled")
-            return
+        if operation_running:
+            if name != active_operation_name:
+                if active_operation_name not in self.repositories:
+                    # Системная операция (установка инструментов)
+                    self._set_buttons_state("disabled")
+                    self.btn_run.config(text="Отменить", state="normal",
+                                        command=lambda: self.stop_operation(active_operation_name))
+                    self.btn_open_folder.config(state="disabled")
+                    self.btn_open_upload.config(state="disabled")
+                    return
+                else:
+                    self._set_buttons_state("disabled")
+                    if status == "installed":
+                        self.btn_run.config(text="Запустить", state="normal", command=self.toggle_game)
+                        self.btn_open_folder.config(state="normal")
+                        self.btn_open_upload.config(state="normal")
+                    else:
+                        self.btn_run.config(text="Запустить (Serv+Client)", state="disabled")
+                    return
+            # Если операция относится к выбранной сборке, продолжаем обычную логику
 
         install_text = "Установить"
         install_state = "disabled"
@@ -1312,7 +1858,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             install_state = "disabled"
             cancelable = status in (
                 "Клонирование...", "Сборка...", "Очистка кэша...", "Переустановка...",
-                "Обновление...", "Загрузка готовой сборки..."
+                "Обновление...", "Загрузка готовой сборки...", "Загрузка SDK...",
+                "Авто-пересборка..."
             )
             if cancelable:
                 run_text = "Отменить"
@@ -1405,7 +1952,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if self._operation_lock:
             self.log("⚠ Уже выполняется другая операция. Дождитесь завершения.", tag="warn")
             return
-        ...
         if name in self._active_operations:
             self.log(f"⚠ Операция '{operation_text}' уже выполняется для '{name}'.", tag="warn")
             return
@@ -1419,6 +1965,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             self.progress_bar.config(mode="determinate")
             self.progress_var.set(0)
         self.log(f"▶ {operation_text}", tag="operation")
+        self.lbl_speed.config(text=operation_text)
         self._check_disk_space()
 
     def delete_build(self):
@@ -1446,6 +1993,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 # Полное удаление
                 if self._fast_remove_folder(build_path, name):
                     self.log(f"✅ Сборка {name} удалена.", tag="success")
+                    self.notify_tray("Удалено", f"Сборка '{name}' удалена.")
                     self.show_notification("Готово", f"Сборка '{name}' удалена.")
             finally:
                 self.after(0, lambda: self._end_operation(name))
@@ -1474,6 +2022,18 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             self.log(f"💾 Git-кэш для '{name}' перемещён.", tag="info")
         except Exception as e:
             self.log(f"⚠ Не удалось переместить git-кэш: {e}", tag="warn")
+
+    def _log_clone_failure_help(self):
+        self.log("❌ Клонирование не удалось.", tag="error")
+        self.log("Возможные причины:", tag="warn")
+        self.log("  - Нестабильное интернет-соединение или обрыв связи.", tag="info")
+        self.log("  - Слишком большой объём данных (уменьшите через shallow clone).", tag="info")
+        self.log("  - Временные проблемы на сервере GitHub.", tag="info")
+        self.log("Рекомендации:", tag="bold")
+        self.log("  1. Проверьте подключение к интернету.", tag="info")
+        self.log("  2. Включите опцию 'Shallow clone' в настройках (уменьшает размер).", tag="info")
+        self.log("  3. Попробуйте повторить установку позже.", tag="info")
+        self.log("  4. Если проблема повторяется, используйте VPN или смените сеть.", tag="info")
 
     def _move_to_trash(self, folder_path, name):
         if isinstance(folder_path, str):
@@ -1754,11 +2314,12 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 try:
                     p.terminate()
                     p.wait(timeout=2)
-                except:
+                except Exception as e:
+                    self.log(f"⚠ Ошибка при остановке процесса: {e}", tag="warn")
                     try:
                         p.kill()
-                    except:
-                        pass
+                    except Exception as e2:
+                        self.log(f"⚠ Ошибка при принудительном завершении процесса: {e2}", tag="warn")
 
         for t in inst["threads"]:
             if t.is_alive():
@@ -1801,14 +2362,14 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                     self._instances[instance_id]["log_buffer"].append((f"[{prefix}] {line}", tag))
                     if self._current_instance_id == instance_id:
                         self.after(0, self._refresh_console_view)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"⚠ Ошибка чтения вывода процесса: {e}", tag="warn")
         finally:
             if process.poll() is None:
                 process.terminate()
 
     def open_logs_folder(self):
-        log_dir = Path(__file__).parent.parent / "logs"
+        log_dir = self.data_dir / "logs"
         log_dir.mkdir(exist_ok=True)
         sys_open_path(log_dir)
 
@@ -1832,6 +2393,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 del self.repositories[name]["port"]
                 self.save_config()
             self.log(f"🛑 Все экземпляры '{name}' остановлены.", tag="warn")
+            self.notify_tray("Остановлено", f"Все экземпляры '{name}' остановлены.")
             self.show_notification("Остановлено", f"Все экземпляры '{name}' остановлены.")
             self._end_operation(name)
 
@@ -1847,14 +2409,11 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         if not srv_alive and not cli_alive:
             if inst.get("owns_port"):
                 self._release_port(inst.get("port"))
-            if self.settings.get("keep_finished_instances", True):
-                inst["finished"] = True
-                self._refresh_instance_list()
-                self.refresh_builds_list()
-                self.on_build_select(None)
-                self._refresh_console_view()
-            else:
-                self._stop_instance(instance_id)
+            inst["finished"] = True
+            self._refresh_instance_list()
+            self.refresh_builds_list()
+            self.on_build_select(None)
+            self._refresh_console_view()
             return
         else:
             self.after(2000, lambda: self._check_game_processes(instance_id))
@@ -1875,8 +2434,41 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         threading.Thread(target=self._installation_thread, args=(name, repo_url, build_path, auto_start),
                          daemon=True).start()
 
+    def _configure_git_for_stability(self):
+        """Настраивает Git для устойчивой работы при медленном соединении."""
+        try:
+            subprocess.run(["git", "config", "--global", "http.postBuffer", "524288000"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            subprocess.run(["git", "config", "--global", "http.lowSpeedLimit", "0"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            subprocess.run(["git", "config", "--global", "http.lowSpeedTime", "999999"],
+                           startupinfo=self._hidden_startupinfo(), check=False)
+            self.log("🔧 Git настроен для устойчивой работы (увеличен буфер, отключены таймауты).", tag="info")
+        except Exception as e:
+            self.log(f"⚠ Не удалось применить настройки Git: {e}", tag="warn")
+
+    def _offer_sdk_install_before_build(self, required_version, build_name, build_path):
+        if self.settings.get("auto_install_deps", False):
+            self.log(f"Автоматическая установка .NET SDK {required_version}...", tag="bold")
+            self._download_and_install_sdk(required_version, build_name, build_path)
+            return True
+        else:
+            msg = (f"Для сборки '{build_name}' требуется .NET SDK {required_version}, "
+                   "которая не установлена.\n\n"
+                   "Программа может автоматически скачать и установить её сейчас.\n\n"
+                   "Продолжить?")
+            if messagebox.askyesno("Требуется .NET SDK", msg):
+                self._download_and_install_sdk(required_version, build_name, build_path)
+                return True
+            else:
+                self.log("⚠ Сборка отменена из-за отсутствия требуемой версии SDK.", tag="warn")
+                return False
+
     def _installation_thread(self, name, repo_url, build_path, auto_start=False):
         try:
+            # Настраиваем Git для стабильной работы
+            self._configure_git_for_stability()
+
             # ---------- Клонирование ----------
             clone_success = False
             git_cache_path = self._get_git_cache_dir() / name
@@ -1887,7 +2479,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                              "--reference", str(git_cache_path), "--dissociate"]
                 if self.settings.get("shallow_clone", False):
                     clone_cmd += ["--depth", "1"]
-                clone_cmd += [repo_url, build_path]
+                clone_cmd += [repo_url, str(build_path)]
 
                 clone_success = self._run_subprocess(
                     clone_cmd, cwd=None,
@@ -1903,28 +2495,42 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                     except Exception:
                         pass
 
-            # Если операция отменена после попытки с кэшем — выходим
-            if self._cancel_download:
+            if self._download_cancel_event.is_set() or self._cancel_download:
                 self.log("🛑 Установка отменена пользователем.", tag="warn")
                 self.after(0, lambda: self._end_operation(name))
                 self.after(0, self._install_failed, name, build_path)
                 return
 
-            # 2) Если с кэшем не получилось, клонируем обычным способом
+            # 2) Клонируем обычным способом (с повторами)
             if not clone_success:
                 clone_cmd = ["git", "clone", "--progress"]
                 if self.settings.get("shallow_clone", False):
                     clone_cmd += ["--depth", "1"]
-                clone_cmd += [repo_url, build_path]
+                clone_cmd += [repo_url, str(build_path)]
 
-                clone_success = self._run_subprocess(
-                    clone_cmd, cwd=None,
-                    step_name="git clone",
-                    progress_parser=self.filter_git_line,
-                    operation_name=name
-                )
+                max_attempts = 3
+                for attempt in range(1, max_attempts + 1):
+                    # Удаляем недокачанную папку перед новой попыткой
+                    if os.path.exists(build_path):
+                        self.log(f"🧹 Очистка неполной папки перед попыткой {attempt}...", tag="info")
+                        self._fast_remove_folder(build_path, name)
+
+                    clone_success = self._run_subprocess(
+                        clone_cmd, cwd=None,
+                        step_name="git clone",
+                        progress_parser=self.filter_git_line,
+                        operation_name=name
+                    )
+                    if clone_success:
+                        break
+                    if self._cancel_download:
+                        break
+                    if attempt < max_attempts:
+                        self.log(f"⚠ Попытка {attempt} не удалась. Повтор через 5 секунд...", tag="warn")
+                        time.sleep(5)
 
             if not clone_success:
+                self._log_clone_failure_help()
                 self.after(0, lambda: self._end_operation(name))
                 self.after(0, self._install_failed, name, build_path)
                 return
@@ -1991,19 +2597,41 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                     req_sdk = data.get("sdk", {}).get("version")
                     if req_sdk:
                         installed = self._get_installed_sdks()
-                        if req_sdk not in installed:
-                            if self._offer_sdk_install_before_build(req_sdk, name, build_path):
-                                self.after(0, lambda: self._end_operation(name))
-                                self.after(0, self._install_failed, name, build_path)
-                                return
+                        if req_sdk in installed:
+                            self.log(f"✅ Требуемая SDK {req_sdk} найдена.", tag="success")
+                        else:
+                            best = self._get_best_installed_sdk(req_sdk)
+                            if best is not None:
+                                self.log(f"⚠ Требуемая SDK {req_sdk} не найдена. Заменяем на {best}.", tag="warn")
+                                data["sdk"]["version"] = best
+                                with open(global_json, "w", encoding="utf-8") as f:
+                                    json.dump(data, f, indent=2)
+                                self.log("✅ global.json обновлён.", tag="success")
                             else:
-                                self.log(f"⚠ Сборка '{name}' отменена, требуется SDK {req_sdk}.", tag="warn")
-                                self.after(0, lambda: self._end_operation(name))
-                                self.after(0, self._install_failed, name, build_path)
-                                return
-                        self._fix_dotnet_sdk(global_json)
-                except Exception:
-                    pass
+                                self.log(f"❌ Нет подходящей SDK. Требуется {req_sdk}.", tag="error")
+                                if self._offer_sdk_install_before_build(req_sdk, name, build_path):
+                                    # Ждём, пока SDK установится (максимум 5 минут)
+                                    deadline = time.time() + 300
+                                    while time.time() < deadline:
+                                        installed = self._get_installed_sdks()
+                                        if req_sdk in installed:
+                                            break
+                                        time.sleep(5)
+                                    installed = self._get_installed_sdks()
+                                    if req_sdk not in installed:
+                                        self.log("❌ Установка SDK не завершилась или версия не появилась.", tag="error")
+                                        self.after(0, lambda: self._end_operation(name))
+                                        self.after(0, self._install_failed, name, build_path)
+                                        return
+                                    # После успешной установки пробуем обновить global.json
+                                    self._fix_dotnet_sdk(global_json)
+                                else:
+                                    self.log("⚠ Сборка отменена из-за отсутствия SDK.", tag="warn")
+                                    self.after(0, lambda: self._end_operation(name))
+                                    self.after(0, self._install_failed, name, build_path)
+                                    return
+                except Exception as e:
+                    self.log(f"⚠ Ошибка обработки global.json: {e}", tag="warn")
 
             # ---------- Сборка ----------
             if self._cancel_download:
@@ -2036,7 +2664,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             res = subprocess.run(["dotnet", "--list-sdks"], capture_output=True, text=True, timeout=5,
                                  startupinfo=self._hidden_startupinfo())
             return re.findall(r'^(\d+\.\d+\.\d+)', res.stdout, re.MULTILINE)
-        except Exception:
+        except Exception as e:
+            self.log(f"⚠ Ошибка получения списка SDK: {e}", tag="warn")
             return []
 
     def _get_build_command(self, mode="Debug"):
@@ -2071,6 +2700,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.after(0, self.progress_var.set, 0)
         self.after(0, self.lbl_speed.config, {"text": "Ошибка"})
         self.log("❌ Сборка не удалась.", tag="error")
+        self.notify_tray("Ошибка", f"Сборка '{name}' не удалась.")
         self.show_notification("Ошибка сборки", f"Сборка '{name}' не удалась.")
 
         if not is_clean_rebuild:
@@ -2087,8 +2717,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 subprocess.run(["dotnet", "nuget", "disable", "source", "dotnet-eng"],
                                capture_output=True, timeout=10, startupinfo=self._hidden_startupinfo())
                 self._nuget_disabled = True
-            except Exception:
-                pass
+            except Exception as e:
+                self.log(f"⚠ Не удалось отключить NuGet-источник: {e}", tag="warn")
             self.log("🔧 Повторная сборка...", tag="bold")
             mode = self.repositories[name].get("mode", "Debug")
             self._run_pre_restore_if_needed(build_path)
@@ -2130,34 +2760,76 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         return f"https://dotnetcli.azureedge.net/dotnet/Sdk/{version}/dotnet-sdk-{version}-win-{win_arch}.exe"
 
     def _download_and_install_sdk(self, version, build_name, build_path):
+        operation_name = f"Установка .NET SDK {version}..."
+        self._start_operation(operation_name, operation_name, progress_mode="determinate")
+        self._download_start = time.time()
+        self._last_download_time = 0
+        self._last_download_bytes = 0
         url = self._get_dotnet_sdk_url(version)
         self.log(f"⬇ Начинаю загрузку .NET SDK {version}...", tag="bold")
-        self._start_operation(build_name or "system", "Загрузка SDK...", progress_mode="determinate")
+        if self._cancel_download or self._download_cancel_event.is_set():
+            self.log("🛑 Установка отменена пользователем.", tag="warn")
+            return
 
         def download_thread():
             try:
                 self._last_download_log = -1
                 self._download_start = time.time()
+                self._download_cancel_event.clear()
+                dest_name = f"dotnet-sdk-{version}-{platform.machine().lower()}.exe"
+                expected_hash = getattr(self, "TOOL_HASHES", {}).get(dest_name)
                 installer_path = self.download_manager.download(
-                    url, dest_name=f"dotnet-sdk-{version}-{platform.machine().lower()}.exe",
-                    progress_callback=self._download_progress
+                    url, dest_name,
+                    progress_callback=self._download_progress,
+                    cancel_event=self._download_cancel_event,
+                    expected_sha256=expected_hash
                 )
                 if not installer_path:
                     raise Exception("Не удалось скачать SDK")
 
+                if self._cancel_download or self._download_cancel_event.is_set():
+                    self.log("🛑 Установка отменена пользователем.", tag="warn")
+                    return
+
+                # Проверка цифровой подписи
+                if not self._verify_installer_signature(installer_path):
+                    self.log("❌ Цифровая подпись установщика недействительна. Установка отменена.", tag="error")
+                    return
+
                 ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
                 if not os.path.exists(ps_path):
                     ps_path = "powershell.exe"
+                silent_args = "/quiet /norestart"
+                safe_path = self._escape_powershell_arg(installer_path)
                 ps_args = [ps_path, "-Command",
-                           f'Start-Process -FilePath "{installer_path}" -Verb RunAs -Wait']
+                           f'Start-Process -FilePath {safe_path} -ArgumentList "{silent_args}" -Verb RunAs -Wait']
+
                 self.log(f"🔧 Запуск установщика .NET SDK {version}...", tag="bold")
-                result = subprocess.run(ps_args, startupinfo=self._hidden_startupinfo(),
-                                        capture_output=True, text=True)
-                if result.returncode != 0:
-                    self.log(f"❌ Установка .NET SDK {version} не была завершена (код {result.returncode}). "
+                proc = subprocess.Popen(ps_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True, startupinfo=self._hidden_startupinfo())
+                self._operation_procs.setdefault(operation_name, []).append(proc)
+
+                while proc.poll() is None:
+                    if self._cancel_download or self._download_cancel_event.is_set():
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        self.log("🛑 Установка прервана из-за отмены.", tag="warn")
+                        return
+                    time.sleep(1)
+
+                if proc in self._operation_procs.get(operation_name, []):
+                    self._operation_procs[operation_name].remove(proc)
+
+                if proc.returncode != 0:
+                    self.log(f"❌ Установка .NET SDK {version} не была завершена (код {proc.returncode}). "
                              f"Возможно, отменён запрос UAC.", tag="error")
                     return
+
                 self.log(f"⏳ Установка .NET SDK {version} завершена.", tag="bold")
+                self._refresh_system_path()
 
                 installed = self._get_installed_sdks()
                 if version not in installed:
@@ -2176,46 +2848,79 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             except Exception as e:
                 self.log(f"❌ Ошибка при работе с .NET SDK: {e}", tag="error")
             finally:
-                if build_name:
-                    self.after(0, lambda: self._end_operation(build_name))
-                else:
-                    self._end_operation("system")
+                self.after(0, self.progress_bar.stop)
+                self.after(0, lambda: self.progress_bar.config(mode="determinate"))
+                self.after(0, lambda: self.progress_var.set(0))
+                self.after(0, lambda: self.lbl_speed.config(text="0.00 MiB/s"))
+                self.after(0, lambda: self._end_operation(operation_name))
 
         threading.Thread(target=download_thread, daemon=True).start()
 
     def _download_progress(self, block_num, block_size, total_size):
-        if total_size > 0:
-            percent = min(100, int(block_num * block_size * 100 / total_size))
-            self.after(0, self.progress_var.set, percent)
-
-            elapsed = time.time() - self._download_start
-            if elapsed > 0:
-                speed = block_num * block_size / elapsed
-                self.after(0, self.lbl_speed.config, {"text": f"{speed / 1024 / 1024:.2f} MiB/s"})
-
-            # Логируем каждые 10% (и 100%)
-            if percent % 10 == 0 and percent != self._last_download_log:
-                self.log(f"⬇ Загрузка: {percent}%", tag="info")
-                self._last_download_log = percent
-        else:
+        if total_size <= 0:
             self.after(0, self.progress_bar.config, {"mode": "indeterminate"})
             self.after(0, self.progress_bar.start)
+            return
+
+        percent = min(100, int(block_num * block_size * 100 / total_size))
+        self.after(0, self.progress_var.set, percent)
+
+        # Логируем каждые 10%
+        if percent % 10 == 0 and percent != self._last_download_log:
+            self.log(f"⬇ Загрузка: {percent}%", tag="info")
+            self._last_download_log = percent
+
+        now = time.time()
+        bytes_done = block_num * block_size
+        dt = now - self._last_download_time
+        # Первый вызов: запоминаем стартовые значения
+        if self._last_download_time == 0:
+            self._last_download_time = now
+            self._last_download_bytes = bytes_done
+            return
+
+        if dt > 0.5:
+            speed = (bytes_done - self._last_download_bytes) / dt if dt > 0 else 0
+            self._last_download_time = now
+            self._last_download_bytes = bytes_done
+
+            # Форматируем скорость
+            if speed >= 1024 * 1024:
+                speed_text = f"{speed / (1024 * 1024):.2f} MiB/s"
+            elif speed >= 1024:
+                speed_text = f"{speed / 1024:.2f} KiB/s"
+            else:
+                speed_text = f"{speed:.0f} B/s"
+
+            # Расчёт оставшегося времени
+            eta_text = ""
+            if speed > 0:
+                remaining_bytes = total_size - bytes_done
+                remaining_sec = remaining_bytes / speed
+                if remaining_sec > 60:
+                    mins = int(remaining_sec // 60)
+                    secs = int(remaining_sec % 60)
+                    eta_text = f" · осталось {mins:02d}:{secs:02d}"
+                else:
+                    eta_text = f" · осталось {int(remaining_sec)} сек"
+
+            self.after(0, self.lbl_speed.config, {"text": speed_text + eta_text})
 
     def _print_build_diagnostics(self, build_path):
         try:
             ver = subprocess.run(["dotnet", "--version"], capture_output=True, text=True, timeout=5,
                                  startupinfo=self._hidden_startupinfo()).stdout.strip()
             self.log(f"Текущая версия .NET SDK: {ver}", tag="info")
-        except:
-            pass
+        except Exception as e:
+            self.log(f"⚠ Не удалось получить версию .NET SDK: {e}", tag="warn")
         gj = os.path.join(build_path, "global.json")
         if os.path.exists(gj):
             try:
                 with open(gj, "r") as f:
                     data = json.load(f)
                     self.log(f"global.json: {json.dumps(data, indent=2)}", tag="info")
-            except:
-                pass
+            except Exception as e:
+                self.log(f"⚠ Не удалось прочитать global.json: {e}", tag="warn")
         self.log(f"Платформа: {sys.platform}, архитектура: {('x64' if sys.maxsize > 2 ** 32 else 'x86')}",
                  tag="info")
 
@@ -2262,21 +2967,20 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
 
             for text, tag in buffer:
                 self.log(text, tag)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"⚠ Ошибка при чтении вывода подпроцесса: {e}", tag="warn")
 
-        process.wait(timeout=1800)
-        if process in self._running_subprocesses:
-            self._running_subprocesses.remove(process)
-        if operation_name and process in self._operation_procs.get(operation_name, []):
-            self._operation_procs[operation_name].remove(process)
-
-        if process.returncode != 0:
-            self.log(f"❌ {step_name} ошибка {process.returncode}", tag="error")
+        try:
+            process.wait(timeout=1800)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            self.log(f"⚠ {step_name} завис и был принудительно завершён.", tag="warn")
+            # убрать из списков
+            if process in self._running_subprocesses:
+                self._running_subprocesses.remove(process)
+            if operation_name and process in self._operation_procs.get(operation_name, []):
+                self._operation_procs[operation_name].remove(process)
             return False
-        return True
-
-        process.wait(timeout=1800)
         if process in self._running_subprocesses:
             self._running_subprocesses.remove(process)
         if operation_name and process in self._operation_procs.get(operation_name, []):
@@ -2293,6 +2997,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
         self.progress_var.set(100)
         self.lbl_speed.config(text="Готово")
         self.log("=== Установка успешно завершена ===", tag="done")
+        self.notify_tray("Установка завершена", f"Сборка '{name}' успешно установлена.")
         self.show_notification("Установка завершена", f"Сборка '{name}' успешно установлена.")
         self.tree.config(selectmode="browse")
         self.refresh_builds_list()
@@ -2365,7 +3070,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         else:
-            # Быстрый способ: использовать taskkill с фильтром по модулю (git, dotnet и т.п.)
             try:
                 # Убиваем все процессы git, которые могут держать файлы
                 subprocess.run(["taskkill", "/F", "/IM", "git.exe"], capture_output=True, timeout=5)
@@ -2373,7 +3077,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
                 killed = True
                 self.log("🛑 Процессы git/dotnet завершены через taskkill.", tag="warn")
             except Exception as e:
-                self.log(f"⚠ Не удалось завершить процессы: {e}", tag="warn")
+                self.log(f"⚠ Ошибка при завершении процессов: {e}", tag="warn")
 
         if killed:
             time.sleep(0.2)  # уменьшили с 1 секунды до 0.2
@@ -2401,8 +3105,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             if not folder_path.exists():
                 self.log(f"✅ Папка {name} удалена через shutil.", tag="success")
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            self.log(f"⚠ Ошибка удаления через shutil: {e}", tag="warn")
 
         # Последний шанс – от имени администратора
         if sys.platform == "win32":
@@ -2456,7 +3160,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin):
             req = data.get("sdk", {}).get("version")
             if not req:
                 return
-        except Exception:
+        except Exception as e:
+            self.log(f"⚠ Не удалось прочитать global.json: {e}", tag="warn")
             return
 
         best = self._get_best_installed_sdk(req)

@@ -1,8 +1,9 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from utils.system import get_data_dir
 
-LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR = get_data_dir() / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 

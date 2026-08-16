@@ -1,12 +1,16 @@
+# core/config.py
 import json
 import shutil
 from pathlib import Path
 
-CONFIG_VERSION = 56
+CONFIG_VERSION = 60
 
 
 class ConfigManager:
-    def __init__(self, config_file="config.json"):
+    def __init__(self, config_file=None):
+        if config_file is None:
+            from utils.system import get_data_dir
+            config_file = get_data_dir() / "config.json"
         self.config_file = Path(config_file)
         self.data = self.load()
 
@@ -59,13 +63,16 @@ class ConfigManager:
             "shallow_clone": False,
             "parallel_build": False,
             "pre_restore": False,
-            "strict_sdk_major": True,
-            "auto_install_deps": False,
+            "strict_sdk_major": False,
+            "auto_install_deps": True,
+            "verify_installer_signature": True,
             "confirm_destructive": True,
+            "auto_update": False,
             "keep_finished_instances": True,
             "enable_git_cache": True,
             "minimize_to_tray": False,
             "max_instances": 5,
+            "builds_dir": "",
         }
 
     def default_log_filters(self):
@@ -84,33 +91,48 @@ class ConfigManager:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                # Миграция старых конфигов
+                # Миграция репозиториев: добавляем недостающие поля внутри каждого репозитория,
+                # сохраняем пользовательские репозитории без восстановления удалённых.
                 if "repositories" in data:
-                    repos = data["repositories"]
-                    migrated = {}
-                    for name, val in repos.items():
+                    migrated_repos = {}
+                    for name, val in data["repositories"].items():
                         if isinstance(val, str):
-                            migrated[name] = {
-                                "url": val,
-                                "mode": "Debug",
-                                "favorite": False
-                            }
-                        elif isinstance(val, dict) and "url" in val:
-                            migrated[name] = {
-                                "url": val["url"],
+                            migrated_repos[name] = {"url": val, "mode": "Debug", "favorite": False}
+                        elif isinstance(val, dict):
+                            migrated_repos[name] = {
+                                "url": val.get("url", ""),
                                 "mode": val.get("mode", "Debug"),
                                 "prebuilt_url": val.get("prebuilt_url"),
                                 "favorite": val.get("favorite", False)
                             }
                         else:
-                            migrated[name] = val
-                    data["repositories"] = migrated
+                            migrated_repos[name] = val
+                    data["repositories"] = migrated_repos
 
-                defaults.update(data)
+                def deep_merge(default, user):
+                    result = default.copy()
+                    for key, value in user.items():
+                        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                            result[key] = deep_merge(result[key], value)
+                        else:
+                            result[key] = value
+                    return result
+
+                merged = defaults.copy()
+                if "settings" in data:
+                    merged["settings"] = deep_merge(defaults["settings"], data["settings"])
+                if "log_filters" in data:
+                    merged["log_filters"] = deep_merge(defaults["log_filters"], data["log_filters"])
+                if "repositories" in data:
+                    merged["repositories"] = data["repositories"]
+
+                merged["config_version"] = CONFIG_VERSION
+                self.data = merged
             except Exception:
-                pass
-
-        return defaults
+                self.data = defaults
+        else:
+            self.data = defaults
+        return self.data
 
     def save(self):
         # Резервная копия

@@ -7,7 +7,7 @@ import re
 import time
 from pathlib import Path
 import sys
-
+import subprocess
 from ui.widgets import ToolTip, show_notification
 from utils.system import open_path as sys_open_path
 
@@ -22,6 +22,13 @@ class DialogsMixin:
         show_notification(self, title, message, theme, duration)
 
     # ================== Настройки ==================
+
+    def _browse_builds_dir(self, var):
+        from tkinter import filedialog
+        chosen = filedialog.askdirectory(initialdir=var.get() or str(self.builds_dir))
+        if chosen:
+            var.set(chosen)
+
     def open_settings_dialog(self):
         original_theme = self.settings.get("theme", "Стандартная")
         t = self.THEMES.get(original_theme)
@@ -33,18 +40,18 @@ class DialogsMixin:
         dialog = tk.Toplevel(self)
         self.settings_dialog = dialog
         dialog.title("Настройки")
-        dialog.geometry("560x600")
+        dialog.geometry("620x680")
         dialog.configure(bg=t["bg"])
         dialog.resizable(False, False)
         dialog.grab_set()
-        dialog.protocol("WM_DELETE_WINDOW", lambda: save())
+        dialog.protocol("WM_DELETE_WINDOW", lambda: self._close_settings_dialog(dialog))
 
         notebook = ttk.Notebook(dialog)
         self.settings_notebook = notebook
         style = ttk.Style()
         style.configure("TNotebook", background=t["bg"], borderwidth=0)
         style.configure("TNotebook.Tab", background=t["tree_bg"], foreground=t["tree_fg"],
-                        padding=[10, 5], bordercolor=t["tree_frame_highlight"])
+                        padding=[12, 6], bordercolor=t["tree_frame_highlight"])
         style.map("TNotebook.Tab",
                   background=[("selected", t["bg"])],
                   foreground=[("selected", t["menu_fg"])],
@@ -54,36 +61,9 @@ class DialogsMixin:
         self.settings_widgets.clear()
         self.settings_tabs.clear()
 
-        # Вкладка "Общие"
-        tab_general = tk.Frame(notebook, bg=t["bg"])
-        notebook.add(tab_general, text="Общие")
-        self.settings_tabs.append(tab_general)
-
+        # ===== Переменные =====
         keep_finished_var = tk.BooleanVar(value=self.settings.get("keep_finished_instances", True))
-        keep_finished_check = tk.Checkbutton(tab_general,
-                                             text="Сохранять завершённые экземпляры в списке",
-                                             variable=keep_finished_var, bg=t["bg"], fg=t["fg"],
-                                             selectcolor=t["bg"],
-                                             activebackground=t["bg"], activeforeground=t["menu_fg"])
-        keep_finished_check.pack(anchor="w", padx=20, pady=5)
-        self.settings_widgets.append(keep_finished_check)
-        ToolTip(keep_finished_check,
-                "Если включено, завершившиеся экземпляры остаются в диспетчере для просмотра логов.\n"
-                "Если выключено, они автоматически удаляются.")
-
         max_inst_var = tk.IntVar(value=self.settings.get("max_instances", 5))
-        max_inst_frame = tk.Frame(tab_general, bg=t["bg"])
-        max_inst_frame.pack(anchor="w", padx=20, pady=5)
-        max_inst_label = tk.Label(max_inst_frame, text="Максимум экземпляров одной сборки:", bg=t["bg"], fg=t["fg"])
-        max_inst_label.pack(side="left")
-        self.settings_widgets.append(max_inst_label)
-        max_inst_spin = tk.Spinbox(max_inst_frame, from_=1, to=10, width=3, textvariable=max_inst_var,
-                                   bg=t["tree_bg"], fg=t["tree_fg"], buttonbackground=t["tree_bg"],
-                                   insertbackground=t["tree_fg"])
-        max_inst_spin.pack(side="left", padx=5)
-        ToolTip(max_inst_spin, "Сколько одновременных копий одной сборки можно запустить.")
-        self.settings_widgets.extend([max_inst_spin, max_inst_frame])
-
         auto_del_var = tk.BooleanVar(value=self.settings.get("auto_delete_failed", False))
         confirm_clean_var = tk.BooleanVar(value=self.settings.get("confirm_clean_rebuild", False))
         shallow_var = tk.BooleanVar(value=self.settings.get("shallow_clone", False))
@@ -92,139 +72,160 @@ class DialogsMixin:
         strict_sdk_var = tk.BooleanVar(value=self.settings.get("strict_sdk_major", True))
         auto_deps_var = tk.BooleanVar(value=self.settings.get("auto_install_deps", False))
         confirm_destructive_var = tk.BooleanVar(value=self.settings.get("confirm_destructive", True))
-
-        # Чекбокс сворачивания в трей
         minimize_to_tray_var = tk.BooleanVar(value=self.settings.get("minimize_to_tray", True))
-        minimize_to_tray_check = tk.Checkbutton(tab_general,
-                                                text="Сворачивать в трей при закрытии",
-                                                variable=minimize_to_tray_var, bg=t["bg"], fg=t["fg"],
-                                                selectcolor=t["bg"],
-                                                activebackground=t["bg"], activeforeground=t["menu_fg"])
-        minimize_to_tray_check.pack(anchor="w", padx=20, pady=5)
-        self.settings_widgets.append(minimize_to_tray_check)
-
-        # Чекбокс для git-кэша
         enable_git_cache_var = tk.BooleanVar(value=self.settings.get("enable_git_cache", True))
-        enable_git_cache_check = tk.Checkbutton(tab_general,
-                                                text="Сохранять git-кэш при удалении (ускоряет переустановку)",
-                                                variable=enable_git_cache_var, bg=t["bg"], fg=t["fg"],
-                                                selectcolor=t["bg"],
-                                                activebackground=t["bg"], activeforeground=t["menu_fg"])
-        enable_git_cache_check.pack(anchor="w", padx=20, pady=5)
-        self.settings_widgets.append(enable_git_cache_check)
-        # Кнопка очистки кэша
-        clear_cache_btn = tk.Button(tab_general, text="Очистить кэш",
-                                    bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
-                                    activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                                    command=self.clear_cache)
-        clear_cache_btn.pack(anchor="w", padx=20, pady=5)
-        self.settings_widgets.append(clear_cache_btn)
+        builds_dir_var = tk.StringVar(value=self.settings.get("builds_dir", ""))
+        verify_signature_var = tk.BooleanVar(value=self.settings.get("verify_installer_signature", True))
+        current_theme = tk.StringVar(value=original_theme)
 
-        # Чекбоксы
-        auto_del_check = tk.Checkbutton(tab_general, text="Автоматически удалять неудавшиеся сборки",
-                                        variable=auto_del_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                        activebackground=t["bg"], activeforeground=t["menu_fg"])
-        auto_del_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(auto_del_check, "Если включено, после ошибки сборки папка будет удалена.\n"
-                                "Если выключено, папка остаётся для повторного использования.")
-        self.settings_widgets.append(auto_del_check)
+        def add_section(parent, title):
+            """Создаёт контейнер с заголовком секции."""
+            frame = tk.Frame(parent, bg=t["bg"])
+            frame.pack(fill="x", padx=15, pady=8)
+            lbl = tk.Label(frame, text=title, bg=t["bg"], fg=t["menu_fg"],
+                           font=("Arial", 10, "bold"))
+            lbl.pack(anchor="w", pady=(0, 4))
+            self.settings_widgets.extend([frame, lbl])
+            return frame
 
-        confirm_clean_check = tk.Checkbutton(tab_general, text="Запрашивать подтверждение перед очисткой кэша",
-                                             variable=confirm_clean_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                             activebackground=t["bg"], activeforeground=t["menu_fg"])
-        confirm_clean_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(confirm_clean_check, "Показывать диалог подтверждения перед выполнением\n"
-                                     "глубокой очистки (bin, obj) и пересборки.")
-        self.settings_widgets.append(confirm_clean_check)
+        # ===== Вкладка "Общие" =====
+        tab_general = tk.Frame(notebook, bg=t["bg"])
+        notebook.add(tab_general, text="Общие")
+        self.settings_tabs.append(tab_general)
 
-        shallow_check = tk.Checkbutton(tab_general, text="Мелкое клонирование (shallow clone)",
-                                       variable=shallow_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                       activebackground=t["bg"], activeforeground=t["menu_fg"])
-        shallow_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(shallow_check, "Использовать git clone --depth 1 для ускорения загрузки.\n"
-                               "Не скачивается вся история коммитов.")
-        self.settings_widgets.append(shallow_check)
+        section = add_section(tab_general, "Поведение окна")
+        cb = tk.Checkbutton(section, text="Сворачивать в трей при закрытии",
+                            variable=minimize_to_tray_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
 
-        pre_restore_check = tk.Checkbutton(tab_general, text="Предварительное восстановление пакетов (dotnet restore)",
-                                           variable=pre_restore_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                           activebackground=t["bg"], activeforeground=t["menu_fg"])
-        pre_restore_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(pre_restore_check, "Запускать dotnet restore перед сборкой.\n"
-                                   "Может ускорить последующие сборки за счёт кэширования пакетов.")
-        self.settings_widgets.append(pre_restore_check)
+        section = add_section(tab_general, "Экземпляры")
+        row = tk.Frame(section, bg=t["bg"])
+        row.pack(anchor="w", padx=10)
+        cb = tk.Checkbutton(row, text="Сохранять завершённые экземпляры",
+                            variable=keep_finished_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(side="left")
+        self.settings_widgets.extend([row, cb])
 
-        parallel_check = tk.Checkbutton(tab_general, text="Параллельная сборка (dotnet build -m)",
-                                        variable=parallel_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                        activebackground=t["bg"], activeforeground=t["menu_fg"])
-        parallel_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(parallel_check, "Включить многопоточную сборку MSBuild.\n"
-                                "Ускоряет компиляцию на многоядерных процессорах.")
-        self.settings_widgets.append(parallel_check)
+        row2 = tk.Frame(section, bg=t["bg"])
+        row2.pack(anchor="w", padx=10, pady=(8, 0))
+        tk.Label(row2, text="Максимум экземпляров одной сборки:",
+                 bg=t["bg"], fg=t["fg"]).pack(side="left")
+        spin = tk.Spinbox(row2, from_=1, to=10, width=4, textvariable=max_inst_var,
+                          bg=t["tree_bg"], fg=t["tree_fg"], buttonbackground=t["tree_bg"],
+                          insertbackground=t["tree_fg"])
+        spin.pack(side="left", padx=6)
+        self.settings_widgets.extend([row2, spin])
 
-        strict_sdk_check = tk.Checkbutton(tab_general, text="Строго соблюдать основную версию SDK (не подменять major)",
-                                          variable=strict_sdk_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                          activebackground=t["bg"], activeforeground=t["menu_fg"])
-        strict_sdk_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(strict_sdk_check, "Если включено, программа не будет заменять требуемую major-версию SDK\n"
-                                  "на другую (например, 9.0 не заменится на 10.0).\n"
-                                  "Если выключено, попытается подобрать ближайшую старшую версию.")
-        self.settings_widgets.append(strict_sdk_check)
+        section = add_section(tab_general, "Безопасность")
+        cb = tk.Checkbutton(section, text="Подтверждать удаление и переустановку",
+                            variable=confirm_destructive_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
 
-        auto_deps_check = tk.Checkbutton(tab_general, text="Автоматически устанавливать недостающие зависимости",
-                                         variable=auto_deps_var, bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
-                                         activebackground=t["bg"], activeforeground=t["menu_fg"])
-        auto_deps_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(auto_deps_check, "Не спрашивать разрешения на установку Git, Python и .NET SDK.\n"
-                                 "Скачивание и запуск установщиков будет выполняться автоматически.")
-        self.settings_widgets.append(auto_deps_check)
+        cb = tk.Checkbutton(section, text="Требовать действительную цифровую подпись установщиков",
+                            variable=verify_signature_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
 
-        confirm_destructive_check = tk.Checkbutton(tab_general,
-                                                   text="Подтверждать опасные действия (удаление, переустановка)",
-                                                   variable=confirm_destructive_var, bg=t["bg"], fg=t["fg"],
-                                                   selectcolor=t["bg"],
-                                                   activebackground=t["bg"], activeforeground=t["menu_fg"])
-        confirm_destructive_check.pack(anchor="w", padx=20, pady=5)
-        ToolTip(confirm_destructive_check, "Показывать подтверждение перед удалением или переустановкой сборки.\n"
-                                           "Защищает от случайных кликов.")
-        self.settings_widgets.append(confirm_destructive_check)
+        # ===== Вкладка "Сборка" =====
+        tab_build = tk.Frame(notebook, bg=t["bg"])
+        notebook.add(tab_build, text="Сборка")
+        self.settings_tabs.append(tab_build)
 
-        restore_btn = tk.Button(tab_general, text="Восстановить конфигурацию из резервной копии",
-                                bg=t["btn_default_bg"], fg=t["btn_default_fg"],
-                                activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                                command=self._restore_config_confirm)
-        restore_btn.pack(anchor="w", padx=20, pady=10)
-        self.settings_widgets.append(restore_btn)
+        section = add_section(tab_build, "Git")
+        for var, text in [
+            (shallow_var, "Мелкое клонирование (shallow clone)"),
+            (enable_git_cache_var, "Сохранять git-кэш при удалении")
+        ]:
+            cb = tk.Checkbutton(section, text=text, variable=var, bg=t["bg"], fg=t["fg"],
+                                selectcolor=t["bg"], activebackground=t["bg"],
+                                activeforeground=t["menu_fg"])
+            cb.pack(anchor="w", padx=10)
+            self.settings_widgets.append(cb)
 
-        # Вкладка "Оформление"
+        section = add_section(tab_build, "Компиляция")
+        for var, text in [
+            (parallel_var, "Параллельная сборка (dotnet build -m)"),
+            (pre_restore_var, "Предварительное восстановление пакетов"),
+            (strict_sdk_var, "Строго соблюдать major-версию SDK")
+        ]:
+            cb = tk.Checkbutton(section, text=text, variable=var, bg=t["bg"], fg=t["fg"],
+                                selectcolor=t["bg"], activebackground=t["bg"],
+                                activeforeground=t["menu_fg"])
+            cb.pack(anchor="w", padx=10)
+            self.settings_widgets.append(cb)
+
+        section = add_section(tab_build, "Автоматизация")
+        auto_update_var = tk.BooleanVar(value=self.settings.get("auto_update", False))
+        cb = tk.Checkbutton(section, text="Автоматически скачивать и устанавливать обновления",
+                            variable=auto_update_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
+        cb = tk.Checkbutton(section, text="Автоматически устанавливать недостающие зависимости",
+                            variable=auto_deps_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
+        cb = tk.Checkbutton(section, text="Автоматически удалять неудавшиеся сборки",
+                            variable=auto_del_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
+
+        section = add_section(tab_build, "Папка сборок")
+        row = tk.Frame(section, bg=t["bg"])
+        row.pack(fill="x", padx=10)
+        entry = tk.Entry(row, textvariable=builds_dir_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                         insertbackground=t["tree_fg"])
+        entry.pack(side="left", fill="x", expand=True)
+        btn = tk.Button(row, text="Обзор...", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
+                        activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                        command=lambda: self._browse_builds_dir(builds_dir_var))
+        btn.pack(side="left", padx=5)
+        self.settings_widgets.extend([row, entry, btn])
+
+        # ===== Вкладка "Оформление" =====
         tab_theme = tk.Frame(notebook, bg=t["bg"])
         notebook.add(tab_theme, text="Оформление")
         self.settings_tabs.append(tab_theme)
 
-        theme_label = tk.Label(tab_theme, text="Выберите тему:", bg=t["bg"], fg=t["fg"], font=("Arial", 10))
-        theme_label.pack(pady=10)
-        self.settings_widgets.append(theme_label)
-
-        current_theme = tk.StringVar(value=original_theme)
+        section = add_section(tab_theme, "Тема оформления")
         theme_radios = []
         for name in self.THEMES:
-            rb = tk.Radiobutton(tab_theme, text=name, variable=current_theme, value=name,
+            rb = tk.Radiobutton(section, text=name, variable=current_theme, value=name,
                                 bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
                                 activebackground=t["bg"], activeforeground=t["menu_fg"],
                                 command=lambda n=name: self.apply_theme(n))
-            rb.pack(anchor="w", padx=20, pady=3)
+            rb.pack(anchor="w", padx=10, pady=3)
             theme_radios.append(rb)
+        self.settings_widgets.extend(theme_radios)
 
-        # Вкладка "Инструменты"
+        # ===== Вкладка "Инструменты" =====
         tab_tools = tk.Frame(notebook, bg=t["bg"])
         notebook.add(tab_tools, text="Инструменты")
         self.settings_tabs.append(tab_tools)
 
+        section = add_section(tab_tools, "Необходимые компоненты")
+
         def build_tool_row(parent, label_text, check_func, install_cmd):
             row = tk.Frame(parent, bg=t["bg"])
-            row.pack(fill="x", padx=20, pady=8)
+            row.pack(fill="x", padx=10, pady=6)
             status = "✅ Установлен" if check_func() else "❌ Не установлен"
-            fg_color = t["btn_accent_fg"] if check_func() else t["btn_danger_fg"]
-            lbl = tk.Label(row, text=f"{label_text}: {status}", bg=t["bg"], fg=fg_color)
+            fg = t["btn_accent_fg"] if check_func() else t["btn_danger_fg"]
+            lbl = tk.Label(row, text=f"{label_text}: {status}", bg=t["bg"], fg=fg)
             lbl.pack(side="left")
             btn = tk.Button(row, text="Установить/Переустановить",
                             bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
@@ -234,12 +235,12 @@ class DialogsMixin:
             self.settings_widgets.extend([row, lbl, btn])
             return row, lbl, btn
 
-        build_tool_row(tab_tools, "Git",
+        build_tool_row(section, "Git",
                        lambda: self._is_tool_installed("git"),
                        lambda: self._download_and_run_installer("Git", self._get_git_url()))
-        build_tool_row(tab_tools, "Python",
+        build_tool_row(section, "Python",
                        lambda: self._is_python_installed(),
-                       self._offer_python_install)
+                       lambda: self._download_and_run_installer("Python", self._get_python_installer_url()))
 
         def check_dotnet():
             if not self._is_tool_installed("dotnet"):
@@ -247,20 +248,38 @@ class DialogsMixin:
             installed = self._get_installed_sdks()
             return any(v.startswith("9.") or v.startswith("10.") for v in installed)
 
-        build_tool_row(tab_tools, ".NET SDK 9/10",
-                       check_dotnet,
+        build_tool_row(section, ".NET SDK 9/10", check_dotnet,
                        lambda: self._download_and_install_sdk("10.0.302", None, None))
 
-        logs_btn = tk.Button(tab_tools, text="Открыть папку с логами",
+        btn_logs = tk.Button(section, text="Открыть папку с логами",
                              bg=t["btn_default_bg"], fg=t["btn_default_fg"],
                              activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                              command=self.open_logs_folder)
-        logs_btn.pack(pady=10)
-        self.settings_widgets.append(logs_btn)
+        btn_logs.pack(pady=10)
+        self.settings_widgets.append(btn_logs)
 
-        # Кнопки внизу
+        # ===== Вкладка "Очистка" =====
+        tab_cleanup = tk.Frame(notebook, bg=t["bg"])
+        notebook.add(tab_cleanup, text="Очистка")
+        self.settings_tabs.append(tab_cleanup)
+
+        section = add_section(tab_cleanup, "Кэш и временные файлы")
+        btn_clear_cache = tk.Button(section, text="Очистить весь кэш",
+                                    bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
+                                    activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                                    command=self.clear_cache)
+        btn_clear_cache.pack(fill="x", padx=10, pady=5)
+        self.settings_widgets.append(btn_clear_cache)
+        btn_clear_dl = tk.Button(section, text="Очистить кэш загрузок",
+                                 bg=t["btn_default_bg"], fg=t["btn_default_fg"],
+                                 activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                                 command=self.clear_download_cache)
+        btn_clear_dl.pack(fill="x", padx=10, pady=5)
+        self.settings_widgets.append(btn_clear_dl)
+
+        # ===== Кнопки сохранения =====
         btn_frame = tk.Frame(dialog, bg=t["bg"])
-        btn_frame.pack(pady=10)
+        btn_frame.pack(pady=12)
 
         def save():
             self.settings["auto_delete_failed"] = auto_del_var.get()
@@ -273,16 +292,21 @@ class DialogsMixin:
             self.settings["confirm_destructive"] = confirm_destructive_var.get()
             self.settings["minimize_to_tray"] = minimize_to_tray_var.get()
             self.settings["enable_git_cache"] = enable_git_cache_var.get()
+            self.settings["auto_update"] = auto_update_var.get()
             self.settings["keep_finished_instances"] = keep_finished_var.get()
             self.settings["max_instances"] = max_inst_var.get()
+            self.settings["builds_dir"] = builds_dir_var.get().strip()
+            self.settings["verify_installer_signature"] = verify_signature_var.get()
             self.settings["theme"] = current_theme.get()
             self.save_settings()
+            self.log("Настройки сохранены.", tag="info")
             self._close_settings_dialog(dialog)
 
         def reset():
             auto_del_var.set(False)
             confirm_clean_var.set(False)
             shallow_var.set(False)
+            auto_update_var.set(False)
             parallel_var.set(False)
             pre_restore_var.set(False)
             strict_sdk_var.set(True)
@@ -290,6 +314,8 @@ class DialogsMixin:
             confirm_destructive_var.set(True)
             keep_finished_var.set(True)
             max_inst_var.set(5)
+            builds_dir_var.set("")
+            verify_signature_var.set(True)
             current_theme.set("Стандартная")
             self.apply_theme("Стандартная")
 
@@ -309,10 +335,6 @@ class DialogsMixin:
                                command=cancel)
         cancel_btn.pack(side="right", padx=10)
 
-        self.settings_widgets.extend([auto_del_check, confirm_clean_check, shallow_check,
-                                      pre_restore_check, parallel_check, strict_sdk_check,
-                                      auto_deps_check, confirm_destructive_check])
-        self.settings_widgets.extend(theme_radios)
         self.settings_widgets.extend([save_btn, reset_btn, cancel_btn])
 
     # ================== Репозитории ==================
@@ -386,13 +408,19 @@ class DialogsMixin:
 
         tk.Label(dialog, text="Название сборки:", bg=t["bg"], fg=t["fg"]).pack(pady=(10, 0))
         name_var = tk.StringVar()
-        tk.Entry(dialog, textvariable=name_var, bg=t["tree_bg"], fg=t["tree_fg"],
-                 insertbackground=t["tree_fg"]).pack(pady=5, padx=20, fill="x")
+        name_entry = tk.Entry(dialog, textvariable=name_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                              insertbackground=t["tree_fg"])
+        name_entry.pack(pady=5, padx=20, fill="x")
+        name_entry.bind("<Control-v>", lambda e: name_entry.event_generate("<<Paste>>"))
+        name_entry.bind("<Control-V>", lambda e: name_entry.event_generate("<<Paste>>"))
 
         tk.Label(dialog, text="Git URL:", bg=t["bg"], fg=t["fg"]).pack(pady=(5, 0))
         url_var = tk.StringVar()
-        tk.Entry(dialog, textvariable=url_var, bg=t["tree_bg"], fg=t["tree_fg"],
-                 insertbackground=t["tree_fg"]).pack(pady=5, padx=20, fill="x")
+        url_entry = tk.Entry(dialog, textvariable=url_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                             insertbackground=t["tree_fg"])
+        url_entry.pack(pady=5, padx=20, fill="x")
+        url_entry.bind("<Control-v>", lambda e: url_entry.event_generate("<<Paste>>"))
+        url_entry.bind("<Control-V>", lambda e: url_entry.event_generate("<<Paste>>"))
 
         tk.Label(dialog, text="Режим сборки:", bg=t["bg"], fg=t["fg"]).pack(pady=(5, 0))
         mode_var = tk.StringVar(value="Debug")
@@ -407,8 +435,11 @@ class DialogsMixin:
 
         tk.Label(dialog, text="URL готовой сборки (опционально):", bg=t["bg"], fg=t["fg"]).pack(pady=(5, 0))
         prebuilt_var = tk.StringVar()
-        tk.Entry(dialog, textvariable=prebuilt_var, bg=t["tree_bg"], fg=t["tree_fg"],
-                 insertbackground=t["tree_fg"]).pack(pady=5, padx=20, fill="x")
+        prebuilt_entry = tk.Entry(dialog, textvariable=prebuilt_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                                  insertbackground=t["tree_fg"])
+        prebuilt_entry.pack(pady=5, padx=20, fill="x")
+        prebuilt_entry.bind("<Control-v>", lambda e: prebuilt_entry.event_generate("<<Paste>>"))
+        prebuilt_entry.bind("<Control-V>", lambda e: prebuilt_entry.event_generate("<<Paste>>"))
 
         def add():
             name = name_var.get().strip()
@@ -442,6 +473,7 @@ class DialogsMixin:
         if not self.repositories:
             messagebox.showinfo("Информация", "Список репозиториев пуст.")
             return
+
         dialog = tk.Toplevel(self)
         self._remove_repo_dialog = dialog
         dialog.title("Удалить репозиторий")
@@ -451,15 +483,18 @@ class DialogsMixin:
         dialog.protocol("WM_DELETE_WINDOW", lambda: self._on_remove_dialog_close(dialog))
 
         tk.Label(dialog, text="Выберите репозиторий для удаления:", bg=t["bg"], fg=t["fg"]).pack(pady=10)
+
         listbox = tk.Listbox(dialog, bg=t["tree_bg"], fg=t["tree_fg"],
                              selectbackground=t["tree_sel_bg"], selectforeground=t["fg"])
         listbox.pack(fill="both", expand=True, padx=20, pady=10)
+
         for name in self.repositories.keys():
             listbox.insert("end", name)
 
         def delete_selected():
             selection = listbox.curselection()
             if not selection:
+                messagebox.showwarning("Удаление", "Выберите репозиторий.", parent=dialog)
                 return
             name = listbox.get(selection[0])
             if messagebox.askyesno("Подтверждение", f"Удалить репозиторий '{name}' из списка?", parent=dialog):
@@ -468,192 +503,17 @@ class DialogsMixin:
                 self.refresh_builds_list()
                 self._on_remove_dialog_close(dialog)
 
+        # Кнопки
         btn_frame = tk.Frame(dialog, bg=t["bg"])
-        btn_frame.pack(pady=5)
-        tk.Button(btn_frame, text="Удалить", bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
-                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                  command=delete_selected).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Отмена", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
-                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                  command=lambda: self._on_remove_dialog_close(dialog)).pack(side="right", padx=10)
+        btn_frame.pack(fill="x", padx=20, pady=10)
 
-    def rename_repository(self, old_name):
-        if old_name not in self.repositories:
-            return
-        if self.get_build_status(old_name) in self.BUSY_STATUSES or self._is_game_running(old_name):
-            messagebox.showwarning("Недоступно", "Дождитесь завершения операции или остановите игру.")
-            return
-
-        dialog = tk.Toplevel(self)
-        dialog.title("Переименовать репозиторий")
-        dialog.geometry("350x150")
-        dialog.configure(bg=self._get_theme_color("bg"))
-        dialog.resizable(False, False)
-        dialog.grab_set()
-
-        tk.Label(dialog, text="Новое имя:", bg=self._get_theme_color("bg"),
-                 fg=self._get_theme_color("fg")).pack(pady=(15, 5))
-        new_name_var = tk.StringVar(value=old_name)
-        entry = tk.Entry(dialog, textvariable=new_name_var, bg=self._get_theme_color("tree_bg"),
-                         fg=self._get_theme_color("tree_fg"), insertbackground=self._get_theme_color("tree_fg"))
-        entry.pack(padx=20, fill="x")
-        entry.select_range(0, tk.END)
-        entry.focus_set()
-
-        def do_rename():
-            new_name = new_name_var.get().strip()
-            if not new_name or new_name == old_name:
-                dialog.destroy()
-                return
-            if new_name in self.repositories:
-                messagebox.showerror("Ошибка", "Репозиторий с таким именем уже существует.", parent=dialog)
-                return
-            if not re.match(r'^[\w\- ]+$', new_name):
-                messagebox.showerror("Ошибка", "Имя содержит недопустимые символы.", parent=dialog)
-                return
-
-            repo_data = self.repositories.pop(old_name)
-            self.repositories[new_name] = repo_data
-
-            old_path = os.path.join(self.builds_dir, old_name)
-            new_path = os.path.join(self.builds_dir, new_name)
-            if os.path.exists(old_path):
-                try:
-                    os.rename(old_path, new_path)
-                except Exception as e:
-                    self.log(f"⚠ Не удалось переименовать папку: {e}", tag="warn")
-                    messagebox.showwarning("Внимание",
-                                           f"Запись обновлена, но папку '{old_name}' не удалось переименовать.\n"
-                                           f"Проверьте права доступа или закройте использующие её программы.",
-                                           parent=dialog)
-
-            self.save_config()
-            self.refresh_builds_list()
-            self.tree.selection_set(new_name)
-            self.tree.see(new_name)
-            self.log(f"✏ Репозиторий переименован: {old_name} → {new_name}", tag="info")
-            dialog.destroy()
-
-        btn_frame = tk.Frame(dialog, bg=self._get_theme_color("bg"))
-        btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="ОК", bg=self._get_theme_color("btn_accent_bg"),
-                  fg=self._get_theme_color("btn_accent_fg"),
-                  activebackground=self._get_theme_color("menu_active_bg"),
-                  activeforeground=self._get_theme_color("menu_active_fg"),
-                  command=do_rename).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Отмена", bg=self._get_theme_color("btn_default_bg"),
-                  fg=self._get_theme_color("btn_default_fg"),
-                  activebackground=self._get_theme_color("menu_active_bg"),
-                  activeforeground=self._get_theme_color("menu_active_fg"),
-                  command=dialog.destroy).pack(side="right", padx=10)
-
-    def edit_repository_url(self, name):
-        if name not in self.repositories:
-            return
-
-        dialog = tk.Toplevel(self)
-        dialog.title(f"Изменить URL: {name}")
-        dialog.geometry("450x150")
-        dialog.configure(bg=self._get_theme_color("bg"))
-        dialog.resizable(False, False)
-        dialog.grab_set()
-
-        tk.Label(dialog, text="Новый Git URL:", bg=self._get_theme_color("bg"),
-                 fg=self._get_theme_color("fg")).pack(pady=(15, 5))
-        url_var = tk.StringVar(value=self.repositories[name].get("url", ""))
-        entry = tk.Entry(dialog, textvariable=url_var, width=50,
-                         bg=self._get_theme_color("tree_bg"),
-                         fg=self._get_theme_color("tree_fg"),
-                         insertbackground=self._get_theme_color("tree_fg"))
-        entry.pack(padx=20, pady=5)
-
-        def save_url():
-            new_url = url_var.get().strip()
-            if not re.match(r'^(https?|git)://.+\..+', new_url):
-                messagebox.showerror("Ошибка", "Введите корректный Git URL.", parent=dialog)
-                return
-            self.repositories[name]["url"] = new_url
-            self.save_config()
-            self.log(f"🔗 URL для '{name}' обновлён.", tag="info")
-            dialog.destroy()
-
-        btn_frame = tk.Frame(dialog, bg=self._get_theme_color("bg"))
-        btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="Сохранить", bg=self._get_theme_color("btn_accent_bg"),
-                  fg=self._get_theme_color("btn_accent_fg"),
-                  activebackground=self._get_theme_color("menu_active_bg"),
-                  activeforeground=self._get_theme_color("menu_active_fg"),
-                  command=save_url).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Отмена", bg=self._get_theme_color("btn_default_bg"),
-                  fg=self._get_theme_color("btn_default_fg"),
-                  activebackground=self._get_theme_color("menu_active_bg"),
-                  activeforeground=self._get_theme_color("menu_active_fg"),
-                  command=dialog.destroy).pack(side="right", padx=10)
-        refresh_list()
-
-        def restore_selected():
-            selection = listbox.curselection()
-            if not selection:
-                messagebox.showwarning("Корзина", "Выберите элемент для восстановления.", parent=dialog)
-                return
-            item_name = listbox.get(selection[0])
-            if messagebox.askyesno("Восстановить", f"Восстановить '{item_name}'?", parent=dialog):
-                if self.restore_from_trash(item_name):
-                    self.log(f"🔄 Восстановлена сборка: {item_name}", tag="success")
-                    refresh_list()
-                    self.refresh_builds_list()
-                else:
-                    messagebox.showerror("Ошибка", "Не удалось восстановить (возможно, папка с таким именем уже существует).",
-                                         parent=dialog)
-
-        def delete_selected():
-            selection = listbox.curselection()
-            if not selection:
-                messagebox.showwarning("Корзина", "Выберите элемент для удаления.", parent=dialog)
-                return
-            item_name = listbox.get(selection[0])
-            if messagebox.askyesno("Удалить безвозвратно", f"Удалить '{item_name}' из корзины?\nДействие необратимо.",
-                                   parent=dialog):
-                if self.delete_trash_item(item_name):
-                    self.log(f"🗑 Из корзины удалено: {item_name}", tag="success")
-                    refresh_list()
-                else:
-                    messagebox.showerror("Ошибка", "Не удалось удалить элемент.", parent=dialog)
-
-        def clear_trash():
-            if messagebox.askyesno("Очистить корзину", "Удалить все элементы из корзины безвозвратно?",
-                                   parent=dialog):
-                self.clear_trash_folder()
-                refresh_list()
-
-        btn_frame = tk.Frame(dialog, bg=t["bg"])
-        btn_frame.pack(fill="x", padx=10, pady=10)
-
-        tk.Button(btn_frame, text="Восстановить", bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
-                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                  command=restore_selected).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Удалить", bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
                   activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                   command=delete_selected).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Очистить всё", bg=t["btn_danger_bg"], fg=t["btn_danger_fg"],
-                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                  command=clear_trash).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Открыть папку", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
-                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
-                  command=self.open_trash_folder).pack(side="right", padx=5)
 
-    def clear_download_cache(self):
-        cache_dir = self.download_manager.cache_dir
-        if not cache_dir.exists():
-            messagebox.showinfo("Кэш", "Кэш загрузок пуст.")
-            return
-        if messagebox.askyesno("Очистить кэш загрузок", "Удалить все кэшированные установщики и временные файлы?"):
-            try:
-                shutil.rmtree(cache_dir)
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                self.log("🧹 Кэш загрузок очищен.", tag="success")
-            except Exception as e:
-                self.log(f"❌ Не удалось очистить кэш: {e}", tag="error")
+        tk.Button(btn_frame, text="Отмена", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
+                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                  command=lambda: self._on_remove_dialog_close(dialog)).pack(side="right", padx=5)
 
     # ================== Вспомогательные методы ==================
     def _restore_config_confirm(self):
