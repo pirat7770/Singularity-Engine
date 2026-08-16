@@ -1,3 +1,4 @@
+# utils/system.py
 import os
 import subprocess
 import sys
@@ -69,8 +70,12 @@ def find_tool_in_path(name):
                 return str(p)
 
         try:
-            res = subprocess.run(["cmd", "/c", "where", name], capture_output=True, text=True,
-                                 timeout=5, startupinfo=hidden_startupinfo())
+            res = subprocess.run(
+                ["cmd", "/c", "where", name],
+                capture_output=True, text=True, timeout=5,
+                startupinfo=hidden_startupinfo(),
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
             if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip().split('\n')[0]
         except Exception:

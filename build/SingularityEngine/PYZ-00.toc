@@ -815,6 +815,23 @@
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\ui\\main_window.py',
    'PYMODULE'),
+  ('ui.mixins', '-', 'PYMODULE'),
+  ('ui.mixins.build_mixin',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\ui\\mixins\\build_mixin.py',
+   'PYMODULE'),
+  ('ui.mixins.game_mixin',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\ui\\mixins\\game_mixin.py',
+   'PYMODULE'),
+  ('ui.mixins.installer_mixin',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\ui\\mixins\\installer_mixin.py',
+   'PYMODULE'),
+  ('ui.mixins.system_mixin',
+   'D:\\ss14-dead-space\\dead-space-14\\Новая '
+   'папка\\Singularity-Engine\\ui\\mixins\\system_mixin.py',
+   'PYMODULE'),
   ('ui.widgets',
    'D:\\ss14-dead-space\\dead-space-14\\Новая '
    'папка\\Singularity-Engine\\ui\\widgets.py',

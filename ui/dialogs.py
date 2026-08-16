@@ -372,8 +372,12 @@ class DialogsMixin:
         # Если не удалось, пробуем через cmd
         if sys.platform == "win32":
             try:
-                subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(git_cache_dir)],
-                               capture_output=True, timeout=10)
+                subprocess.run(
+                    ["cmd", "/c", "rmdir", "/s", "/q", str(git_cache_dir)],
+                    capture_output=True, timeout=10,
+                    startupinfo=self._hidden_startupinfo(),
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
                 if not git_cache_dir.exists():
                     self.log("🧹 Git-кэш очищен через cmd.", tag="success")
                     return

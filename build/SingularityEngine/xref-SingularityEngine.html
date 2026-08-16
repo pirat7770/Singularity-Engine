@@ -129,6 +129,7 @@ imports:
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#collections">collections</a>
  &#8226;   <a href="#copyreg">copyreg</a>
+ &#8226;   <a href="#ctypes">ctypes</a>
  &#8226;   <a href="#encodings">encodings</a>
  &#8226;   <a href="#encodings._win_cp_codecs">encodings._win_cp_codecs</a>
  &#8226;   <a href="#encodings.aliases">encodings.aliases</a>
@@ -301,9 +302,15 @@ imports:
  &#8226;   <a href="#sre_constants">sre_constants</a>
  &#8226;   <a href="#sre_parse">sre_parse</a>
  &#8226;   <a href="#stat">stat</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#traceback">traceback</a>
  &#8226;   <a href="#types">types</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#warnings">warnings</a>
  &#8226;   <a href="#weakref">weakref</a>
 
@@ -5096,6 +5103,7 @@ imported by:
  &#8226;   <a href="#tokenize">tokenize</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
  &#8226;   <a href="#urllib.parse">urllib.parse</a>
  &#8226;   <a href="#xml.etree.ElementTree">xml.etree.ElementTree</a>
 
@@ -5465,12 +5473,14 @@ imported by:
     <a href="#ctypes._endian">ctypes._endian</a>
  &#8226;   <a href="#ctypes._layout">ctypes._layout</a>
  &#8226;   <a href="#ctypes.wintypes">ctypes.wintypes</a>
+ &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#platform">platform</a>
  &#8226;   <a href="#psutil._common">psutil._common</a>
  &#8226;   <a href="#pystray._util.win32">pystray._util.win32</a>
  &#8226;   <a href="#pystray._win32">pystray._win32</a>
  &#8226;   <a href="#pywinstyles.py_win_style">pywinstyles.py_win_style</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
 
   </div>
@@ -9924,6 +9934,9 @@ imported by:
  &#8226;   <a href="#json.encoder">json.encoder</a>
  &#8226;   <a href="#json.scanner">json.scanner</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#utils.updater">utils.updater</a>
 
   </div>
@@ -10518,6 +10531,10 @@ imported by:
  &#8226;   <a href="#tkinter.filedialog">tkinter.filedialog</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
@@ -10589,6 +10606,10 @@ imported by:
  &#8226;   <a href="#pathlib._os">pathlib._os</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#zipfile._path">zipfile._path</a>
 
@@ -10676,6 +10697,8 @@ imports:
 imported by:
     <a href="#pywinstyles.py_win_style">pywinstyles.py_win_style</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
 
   </div>
 
@@ -10796,6 +10819,8 @@ imported by:
  &#8226;   <a href="#psutil._psutil_windows">psutil._psutil_windows</a>
  &#8226;   <a href="#psutil._pswindows">psutil._pswindows</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
 
   </div>
 
@@ -11736,6 +11761,9 @@ imported by:
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.parse">urllib.parse</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#xml.etree.ElementPath">xml.etree.ElementPath</a>
@@ -11959,6 +11987,8 @@ imported by:
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
  &#8226;   <a href="#zipfile">zipfile</a>
@@ -12373,6 +12403,7 @@ imported by:
  &#8226;   <a href="#PIL.ImageShow">PIL.ImageShow</a>
  &#8226;   <a href="#PIL.JpegImagePlugin">PIL.JpegImagePlugin</a>
  &#8226;   <a href="#_aix_support">_aix_support</a>
+ &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#platform">platform</a>
  &#8226;   <a href="#psutil">psutil</a>
@@ -12381,6 +12412,10 @@ imported by:
  &#8226;   <a href="#pystray._darwin">pystray._darwin</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
 
@@ -12457,6 +12492,7 @@ imported by:
  &#8226;   <a href="#linecache">linecache</a>
  &#8226;   <a href="#locale">locale</a>
  &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#mimetypes">mimetypes</a>
  &#8226;   <a href="#ntpath">ntpath</a>
  &#8226;   <a href="#os">os</a>
@@ -12500,6 +12536,9 @@ imported by:
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#warnings">warnings</a>
@@ -12670,6 +12709,10 @@ imported by:
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#sysconfig">sysconfig</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
@@ -12712,6 +12755,10 @@ imported by:
  &#8226;   <a href="#threading">threading</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
@@ -12751,6 +12798,10 @@ imported by:
  &#8226;   <a href="#ui.custom_dialogs">ui.custom_dialogs</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#ui.widgets">ui.widgets</a>
 
   </div>
@@ -12845,6 +12896,10 @@ imported by:
  &#8226;   <a href="#ui.custom_dialogs">ui.custom_dialogs</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
 
   </div>
 
@@ -13156,6 +13211,7 @@ imported by:
  &#8226;   <a href="#ui.custom_dialogs">ui.custom_dialogs</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins">ui.mixins</a>
  &#8226;   <a href="#ui.widgets">ui.widgets</a>
 
   </div>
@@ -13260,17 +13316,157 @@ imports:
  &#8226;   <a href="#ui.constants">ui.constants</a>
  &#8226;   <a href="#ui.custom_dialogs">ui.custom_dialogs</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
  &#8226;   <a href="#utils.system">utils.system</a>
  &#8226;   <a href="#utils.updater">utils.updater</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
- &#8226;   <a href="#winreg">winreg</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
   </div>
   <div class="import">
 imported by:
     <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="ui.mixins"></a>
+  <a target="code" href="-" type="text/plain"><tt>ui.mixins</tt></a>
+<span class="moduletype">NamespacePackage</span>  <div class="import">
+imports:
+    <a href="#ui">ui</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="ui.mixins.build_mixin"></a>
+  <a target="code" href="///D:/ss14-dead-space/dead-space-14/%D0%9D%D0%BE%D0%B2%D0%B0%D1%8F%20%D0%BF%D0%B0%D0%BF%D0%BA%D0%B0/Singularity-Engine/ui/mixins/build_mixin.py" type="text/plain"><tt>ui.mixins.build_mixin</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
+ &#8226;   <a href="#tkinter.messagebox">tkinter.messagebox</a>
+ &#8226;   <a href="#ui.mixins">ui.mixins</a>
+ &#8226;   <a href="#zipfile">zipfile</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+ &#8226;   <a href="#ui.main_window">ui.main_window</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="ui.mixins.game_mixin"></a>
+  <a target="code" href="///D:/ss14-dead-space/dead-space-14/%D0%9D%D0%BE%D0%B2%D0%B0%D1%8F%20%D0%BF%D0%B0%D0%BF%D0%BA%D0%B0/Singularity-Engine/ui/mixins/game_mixin.py" type="text/plain"><tt>ui.mixins.game_mixin</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#collections">collections</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#psutil">psutil</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
+ &#8226;   <a href="#tkinter.messagebox">tkinter.messagebox</a>
+ &#8226;   <a href="#ui.mixins">ui.mixins</a>
+ &#8226;   <a href="#utils.system">utils.system</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+ &#8226;   <a href="#ui.main_window">ui.main_window</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="ui.mixins.installer_mixin"></a>
+  <a target="code" href="///D:/ss14-dead-space/dead-space-14/%D0%9D%D0%BE%D0%B2%D0%B0%D1%8F%20%D0%BF%D0%B0%D0%BF%D0%BA%D0%B0/Singularity-Engine/ui/mixins/installer_mixin.py" type="text/plain"><tt>ui.mixins.installer_mixin</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#platform">platform</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
+ &#8226;   <a href="#tkinter.messagebox">tkinter.messagebox</a>
+ &#8226;   <a href="#ui.mixins">ui.mixins</a>
+ &#8226;   <a href="#zipfile">zipfile</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+ &#8226;   <a href="#ui.main_window">ui.main_window</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="ui.mixins.system_mixin"></a>
+  <a target="code" href="///D:/ss14-dead-space/dead-space-14/%D0%9D%D0%BE%D0%B2%D0%B0%D1%8F%20%D0%BF%D0%B0%D0%BF%D0%BA%D0%B0/Singularity-Engine/ui/mixins/system_mixin.py" type="text/plain"><tt>ui.mixins.system_mixin</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#ctypes">ctypes</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#platform">platform</a>
+ &#8226;   <a href="#psutil">psutil</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
+ &#8226;   <a href="#tkinter.messagebox">tkinter.messagebox</a>
+ &#8226;   <a href="#ui.mixins">ui.mixins</a>
+ &#8226;   <a href="#utils.system">utils.system</a>
+ &#8226;   <a href="#winreg">winreg</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+ &#8226;   <a href="#ui.main_window">ui.main_window</a>
 
   </div>
 
@@ -13471,6 +13667,8 @@ imported by:
  &#8226;   <a href="#core.logger">core.logger</a>
  &#8226;   <a href="#ui.dialogs">ui.dialogs</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.game_mixin">ui.mixins.game_mixin</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
 
   </div>
 
@@ -13669,7 +13867,7 @@ imported by:
  &#8226;   <a href="#mimetypes">mimetypes</a>
  &#8226;   <a href="#platform">platform</a>
  &#8226;   <a href="#pywinstyles.py_win_style">pywinstyles.py_win_style</a>
- &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.system_mixin">ui.mixins.system_mixin</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
 
   </div>
@@ -14020,6 +14218,8 @@ imported by:
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#ui.main_window">ui.main_window</a>
+ &#8226;   <a href="#ui.mixins.build_mixin">ui.mixins.build_mixin</a>
+ &#8226;   <a href="#ui.mixins.installer_mixin">ui.mixins.installer_mixin</a>
  &#8226;   <a href="#zipfile._path">zipfile._path</a>
 
   </div>

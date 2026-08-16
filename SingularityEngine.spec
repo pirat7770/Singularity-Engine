@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
 datas = [('Singularity-Engine.ico', '.'), ('Singularity-Engine2.png', '.')]
-hiddenimports = ['psutil', 'pystray', 'PIL', 'pywinstyles']
+hiddenimports = ['psutil', 'pystray', 'PIL', 'pywinstyles', 'ui.mixins.system_mixin', 'ui.mixins.installer_mixin', 'ui.mixins.build_mixin', 'ui.mixins.game_mixin']
 datas += collect_data_files('pywinstyles')
 hiddenimports += collect_submodules('psutil')
 hiddenimports += collect_submodules('pystray')

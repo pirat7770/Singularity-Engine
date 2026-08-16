@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\main.py", line 30, in main
+    app = SingularityEngineApp()
+  File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\ui\main_window.py", line 91, in __init__
+    if PY_WINSTYLES:
+       ^^^^^^^^^^^^
+NameError: name 'PY_WINSTYLES' is not defined
