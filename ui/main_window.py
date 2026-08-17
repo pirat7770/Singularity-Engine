@@ -65,7 +65,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         except Exception:
             pass
 
-        self.VERSION = "2.11"
+        self.VERSION = "2.12"
         self.tray_icon = None
         self._tray_thread = None
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
@@ -165,8 +165,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self.bind_all("<Control-c>", self.copy_selection)
         self.bind_all("<Control-C>", self.copy_selection)
-        self.bind_all("<Control-v>", self._paste)
-        self.bind_all("<Control-V>", self._paste)
         self.deiconify()
 
     # ================== Инициализация стилей ==================

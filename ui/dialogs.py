@@ -21,6 +21,46 @@ class DialogsMixin:
         theme = self.THEMES.get(self.settings.get("theme", "Стандартная"), self.THEMES["Стандартная"])
         show_notification(self, title, message, theme, duration)
 
+    # ================== Вспомогательные методы для полей ввода ==================
+
+    def _bind_paste(self, widget):
+        def _paste_once(event):
+            try:
+                text = event.widget.clipboard_get()
+                event.widget.insert("insert", text)
+                return "break"
+            except tk.TclError:
+                return
+
+        widget.bind("<Control-v>", _paste_once)
+        widget.bind("<Control-V>", _paste_once)
+        widget.bind("<Shift-Insert>", _paste_once)
+
+        # Добавляем простое контекстное меню
+        def _show_menu(event):
+            menu = tk.Menu(widget, tearoff=0)
+            menu.add_command(label="Вставить", command=lambda: _paste_once(event))
+            menu.tk_popup(event.x_root, event.y_root)
+
+        widget.bind("<Button-3>", _show_menu)
+
+    def _normalize_repo_url(self, url: str) -> str:
+        """Очищает и проверяет URL репозитория, удаляя случайные дубли."""
+        url = url.strip()
+        if not url:
+            return ""
+        # Удаляем повторяющиеся подстроки, если URL случайно задвоился/заутроился
+        for i in range(1, len(url)):
+            if url[:i] == url[i:i+i]:
+                url = url[:i]
+                break
+        # Убираем завершающие слэши
+        url = url.rstrip('/')
+        # Проверяем, что это похоже на git URL
+        if not re.match(r'^(https?|git)://.+\..+', url):
+            return ""
+        return url
+
     # ================== Настройки ==================
 
     def _browse_builds_dir(self, var):
@@ -191,6 +231,7 @@ class DialogsMixin:
         entry = tk.Entry(row, textvariable=builds_dir_var, bg=t["tree_bg"], fg=t["tree_fg"],
                          insertbackground=t["tree_fg"])
         entry.pack(side="left", fill="x", expand=True)
+        self._bind_paste(entry)  # <-- корректная вставка
         btn = tk.Button(row, text="Обзор...", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
                         activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                         command=lambda: self._browse_builds_dir(builds_dir_var))
@@ -347,20 +388,16 @@ class DialogsMixin:
 
     def clear_cache(self):
         """Очищает весь кэш: установщики и git-объекты."""
-        # Очистка кэша установщиков
         self.clear_download_cache()
 
-        # Очистка git-кэша
         git_cache_dir = Path(self.builds_dir) / ".git_cache"
         if not git_cache_dir.exists():
             self.log("ℹ Git-кэш уже пуст.", tag="info")
             return
 
-        # Завершаем процессы, которые могут держать файлы кэша
         self.kill_processes_locking_folder(str(git_cache_dir))
-        time.sleep(0.5)  # небольшая пауза для освобождения файлов
+        time.sleep(0.5)
 
-        # Пробуем удалить через shutil (быстро)
         try:
             shutil.rmtree(git_cache_dir, ignore_errors=True)
             if not git_cache_dir.exists():
@@ -369,7 +406,6 @@ class DialogsMixin:
         except Exception:
             pass
 
-        # Если не удалось, пробуем через cmd
         if sys.platform == "win32":
             try:
                 subprocess.run(
@@ -384,7 +420,6 @@ class DialogsMixin:
             except Exception:
                 pass
 
-        # Если всё ещё не удалилось, сообщаем об ошибке
         self.log("❌ Не удалось очистить git-кэш: файлы заняты другим процессом.", tag="error")
 
     def clear_download_cache(self):
@@ -415,16 +450,14 @@ class DialogsMixin:
         name_entry = tk.Entry(dialog, textvariable=name_var, bg=t["tree_bg"], fg=t["tree_fg"],
                               insertbackground=t["tree_fg"])
         name_entry.pack(pady=5, padx=20, fill="x")
-        name_entry.bind("<Control-v>", lambda e: name_entry.event_generate("<<Paste>>"))
-        name_entry.bind("<Control-V>", lambda e: name_entry.event_generate("<<Paste>>"))
+        self._bind_paste(name_entry)  # <-- корректная вставка
 
         tk.Label(dialog, text="Git URL:", bg=t["bg"], fg=t["fg"]).pack(pady=(5, 0))
         url_var = tk.StringVar()
         url_entry = tk.Entry(dialog, textvariable=url_var, bg=t["tree_bg"], fg=t["tree_fg"],
                              insertbackground=t["tree_fg"])
         url_entry.pack(pady=5, padx=20, fill="x")
-        url_entry.bind("<Control-v>", lambda e: url_entry.event_generate("<<Paste>>"))
-        url_entry.bind("<Control-V>", lambda e: url_entry.event_generate("<<Paste>>"))
+        self._bind_paste(url_entry)  # <-- корректная вставка
 
         tk.Label(dialog, text="Режим сборки:", bg=t["bg"], fg=t["fg"]).pack(pady=(5, 0))
         mode_var = tk.StringVar(value="Debug")
@@ -442,19 +475,25 @@ class DialogsMixin:
         prebuilt_entry = tk.Entry(dialog, textvariable=prebuilt_var, bg=t["tree_bg"], fg=t["tree_fg"],
                                   insertbackground=t["tree_fg"])
         prebuilt_entry.pack(pady=5, padx=20, fill="x")
-        prebuilt_entry.bind("<Control-v>", lambda e: prebuilt_entry.event_generate("<<Paste>>"))
-        prebuilt_entry.bind("<Control-V>", lambda e: prebuilt_entry.event_generate("<<Paste>>"))
+        self._bind_paste(prebuilt_entry)  # <-- корректная вставка
 
         def add():
             name = name_var.get().strip()
-            url = url_var.get().strip()
-            if not name or not re.match(r'^[\w\- ]+$', name) or name in self.repositories or not url or not re.match(
-                    r'^(https?|git)://.+\..+', url):
-                messagebox.showerror("Ошибка", "Проверьте правильность введённых данных.", parent=dialog)
+            url = self._normalize_repo_url(url_var.get())
+            if not name or not re.match(r'^[\w\- ]+$', name) or name in self.repositories:
+                messagebox.showerror("Ошибка", "Проверьте правильность названия.", parent=dialog)
                 return
+            if not url:
+                messagebox.showerror("Ошибка", "Введите корректный URL репозитория.", parent=dialog)
+                return
+
             repo_data = {"url": url, "mode": mode_var.get(), "favorite": False}
             if prebuilt_var.get().strip():
-                repo_data["prebuilt_url"] = prebuilt_var.get().strip()
+                prebuilt_url = self._normalize_repo_url(prebuilt_var.get())
+                if not prebuilt_url:
+                    messagebox.showerror("Ошибка", "Некорректный URL готовой сборки.", parent=dialog)
+                    return
+                repo_data["prebuilt_url"] = prebuilt_url
             self.repositories[name] = repo_data
             self.save_config()
             self.refresh_builds_list()
@@ -465,6 +504,91 @@ class DialogsMixin:
         tk.Button(btn_frame, text="Добавить", bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
                   activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                   command=add).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Отмена", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
+                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                  command=dialog.destroy).pack(side="right", padx=10)
+
+    def edit_repository_url(self, name):
+        """Диалог для изменения URL репозитория."""
+        t = self.THEMES.get(self.settings.get("theme", "Стандартная"))
+        dialog = tk.Toplevel(self)
+        dialog.title("Изменить URL")
+        dialog.geometry("400x180")
+        dialog.configure(bg=t["bg"])
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        tk.Label(dialog, text=f"URL репозитория '{name}':", bg=t["bg"], fg=t["fg"]).pack(pady=(15, 0))
+        url_var = tk.StringVar(value=self.repositories[name]["url"])
+        url_entry = tk.Entry(dialog, textvariable=url_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                             insertbackground=t["tree_fg"])
+        url_entry.pack(pady=8, padx=20, fill="x")
+        self._bind_paste(url_entry)
+
+        def save():
+            new_url = self._normalize_repo_url(url_var.get())
+            if not new_url:
+                messagebox.showerror("Ошибка", "Некорректный URL репозитория.", parent=dialog)
+                return
+            self.repositories[name]["url"] = new_url
+            self.save_config()
+            self.refresh_builds_list()
+            self.tree.selection_set(name)
+            self.tree.see(name)
+            self.log(f"URL репозитория '{name}' обновлён.", tag="info")
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog, bg=t["bg"])
+        btn_frame.pack(pady=15)
+        tk.Button(btn_frame, text="Сохранить", bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
+                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                  command=save).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Отмена", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
+                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                  command=dialog.destroy).pack(side="right", padx=10)
+
+    def rename_repository(self, name):
+        """Диалог для переименования репозитория."""
+        t = self.THEMES.get(self.settings.get("theme", "Стандартная"))
+        dialog = tk.Toplevel(self)
+        dialog.title("Переименовать сборку")
+        dialog.geometry("400x180")
+        dialog.configure(bg=t["bg"])
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        tk.Label(dialog, text="Новое имя сборки:", bg=t["bg"], fg=t["fg"]).pack(pady=(15, 0))
+        name_var = tk.StringVar(value=name)
+        name_entry = tk.Entry(dialog, textvariable=name_var, bg=t["tree_bg"], fg=t["tree_fg"],
+                              insertbackground=t["tree_fg"])
+        name_entry.pack(pady=8, padx=20, fill="x")
+        self._bind_paste(name_entry)
+
+        def save():
+            new_name = name_var.get().strip()
+            if not new_name or not re.match(r'^[\w\- ]+$', new_name):
+                messagebox.showerror("Ошибка", "Некорректное имя сборки.", parent=dialog)
+                return
+            if new_name == name:
+                dialog.destroy()
+                return
+            if new_name in self.repositories:
+                messagebox.showerror("Ошибка", "Сборка с таким именем уже существует.", parent=dialog)
+                return
+
+            self.repositories[new_name] = self.repositories.pop(name)
+            self.save_config()
+            self.refresh_builds_list()
+            self.tree.selection_set(new_name)
+            self.tree.see(new_name)
+            self.log(f"Сборка '{name}' переименована в '{new_name}'.", tag="info")
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog, bg=t["bg"])
+        btn_frame.pack(pady=15)
+        tk.Button(btn_frame, text="Сохранить", bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
+                  activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
+                  command=save).pack(side="left", padx=10)
         tk.Button(btn_frame, text="Отмена", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
                   activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                   command=dialog.destroy).pack(side="right", padx=10)
@@ -507,7 +631,6 @@ class DialogsMixin:
                 self.refresh_builds_list()
                 self._on_remove_dialog_close(dialog)
 
-        # Кнопки
         btn_frame = tk.Frame(dialog, bg=t["bg"])
         btn_frame.pack(fill="x", padx=20, pady=10)
 
