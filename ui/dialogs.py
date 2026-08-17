@@ -34,15 +34,10 @@ class DialogsMixin:
 
         widget.bind("<Control-v>", _paste_once)
         widget.bind("<Control-V>", _paste_once)
+        widget.bind("<Control-м>", _paste_once)
+        widget.bind("<Control-М>", _paste_once)
+
         widget.bind("<Shift-Insert>", _paste_once)
-
-        # Добавляем простое контекстное меню
-        def _show_menu(event):
-            menu = tk.Menu(widget, tearoff=0)
-            menu.add_command(label="Вставить", command=lambda: _paste_once(event))
-            menu.tk_popup(event.x_root, event.y_root)
-
-        widget.bind("<Button-3>", _show_menu)
 
     def _normalize_repo_url(self, url: str) -> str:
         """Очищает и проверяет URL репозитория, удаляя случайные дубли."""
