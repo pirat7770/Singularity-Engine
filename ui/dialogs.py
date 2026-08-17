@@ -24,20 +24,34 @@ class DialogsMixin:
     # ================== Вспомогательные методы для полей ввода ==================
 
     def _bind_paste(self, widget):
-        def _paste_once(event):
+        """Привязывает корректную вставку, работающую на любой раскладке."""
+
+        def _paste_once(event=None):
             try:
-                text = event.widget.clipboard_get()
-                event.widget.insert("insert", text)
+                text = widget.clipboard_get()
+                widget.insert("insert", text)
                 return "break"
             except tk.TclError:
                 return
 
-        widget.bind("<Control-v>", _paste_once)
-        widget.bind("<Control-V>", _paste_once)
-        widget.bind("<Control-м>", _paste_once)
-        widget.bind("<Control-М>", _paste_once)
+        # Перехват по физической клавише V (keycode 86) с Ctrl
+        def _on_key_press(event):
+            if event.state & 0x4 and event.keycode == 86:
+                return _paste_once(event)
+            return None
 
-        widget.bind("<Shift-Insert>", _paste_once)
+        widget.bind("<KeyPress>", _on_key_press)  # сработает на любой раскладке
+        widget.bind("<Control-v>", _paste_once)  # английская раскладка (дополнительно)
+        widget.bind("<Control-V>", _paste_once)
+        widget.bind("<Shift-Insert>", _paste_once)  # альтернативный способ
+
+        # Контекстное меню по правой кнопке мыши
+        def _show_menu(event):
+            menu = tk.Menu(widget, tearoff=0)
+            menu.add_command(label="Вставить", command=_paste_once)
+            menu.tk_popup(event.x_root, event.y_root)
+
+        widget.bind("<Button-3>", _show_menu)
 
     def _normalize_repo_url(self, url: str) -> str:
         """Очищает и проверяет URL репозитория, удаляя случайные дубли."""

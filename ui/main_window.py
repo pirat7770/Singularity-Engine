@@ -163,8 +163,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
 
         self.bind("<Button-1>", self._on_global_click)
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
-        self.bind_all("<Control-c>", self.copy_selection)
-        self.bind_all("<Control-C>", self.copy_selection)
+        self.bind_all("<KeyPress>", self._global_key_handler)
         self.deiconify()
 
     # ================== Инициализация стилей ==================
@@ -236,6 +235,18 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         self.console.tag_config("client_error", foreground="#ff00aa", font=("Consolas", 10, "bold"))
 
     # ================== Вспомогательные методы ==================
+
+    def _global_key_handler(self, event):
+        """Перехватывает Ctrl+C/Ctrl+V по физическому расположению клавиш."""
+        if event.state & 0x4:
+            if event.keycode == 86:
+                self._paste(event)
+                return "break"
+            elif event.keycode == 67:
+                self.copy_selection(event)
+                return "break"
+        return None
+
     def _paste(self, event=None):
         widget = self.focus_get()
         if isinstance(widget, (tk.Entry, tk.Text)):
