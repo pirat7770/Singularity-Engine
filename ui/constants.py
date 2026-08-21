@@ -152,3 +152,12 @@ STATUS_ICONS = {
     "missing": "☐ Не установлено",
     "unknown": "❓ Требуется проверка",
 }
+
+TOOL_HASHES = {
+    "python-3.14.7-amd64.exe": "9d9eb2709ef81bf5cd30db3c2096bdbc4ea10087c22e62f27d356b36f6ae9649",
+    "python-3.14.7-arm64.exe": "9a3fe120cc81bc2cb099550f794d8356811f96a86c7f438519243c3485db928d",
+    "Git-2.55.0.3-64-bit.exe": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca",
+    "Git-2.55.0.3-arm64.exe": "e3d7f5a2214f214f0a93cf0d8915dab236a0e91c7de6de70a7dbde9a61c794db",
+    "dotnet-sdk-10.0.302-win-x64.exe": "b2618a69a4ae385eb03bde0de89468881318c6338b14e67574d691e145a7ce1c",
+    "dotnet-sdk-10.0.302-win-arm64.exe": "bedf0d3ae61284252db8012dab3809879fb6d9721335414b68992d32a6da20bb",
+}

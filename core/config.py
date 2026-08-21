@@ -57,22 +57,29 @@ class ConfigManager:
 
     def default_settings(self):
         return {
-            "auto_delete_failed": False,
-            "confirm_clean_rebuild": False,
-            "theme": "Стандартная",
-            "shallow_clone": False,
-            "parallel_build": False,
-            "pre_restore": False,
-            "strict_sdk_major": False,
-            "auto_install_deps": True,
-            "verify_installer_signature": True,
-            "confirm_destructive": True,
-            "auto_update": False,
-            "keep_finished_instances": True,
-            "enable_git_cache": True,
-            "minimize_to_tray": False,
-            "max_instances": 5,
-            "builds_dir": "",
+            "console_font_family": "Consolas",
+            "console_font_size": 10,
+            "console_line_spacing": 2,
+            "console_bg": "#000000",
+            "console_fg": "#33ff33",
+            "console_buffer_size": 10000,
+            "check_updates": True,
+            "console_colors": {
+                "error": "#ff5555",
+                "success": "#00ff88",
+                "warn": "#ffaa00",
+                "info": "#32CD32",
+                "bold": "#ffffff",
+                "operation": "#66ccff",
+                "done": "#00ffaa",
+                "cancel": "#cc66cc",
+                "server": "#ffaa00",
+                "server_warn": "#ff6600",
+                "server_error": "#ff2200",
+                "client": "#00ccff",
+                "client_warn": "#00ffcc",
+                "client_error": "#ff00aa",
+                }
         }
 
     def default_log_filters(self):

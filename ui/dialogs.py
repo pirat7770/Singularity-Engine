@@ -7,6 +7,7 @@ import re
 import time
 from pathlib import Path
 import sys
+import threading
 import subprocess
 from ui.widgets import ToolTip, show_notification
 from utils.system import open_path as sys_open_path
@@ -89,7 +90,7 @@ class DialogsMixin:
         dialog = tk.Toplevel(self)
         self.settings_dialog = dialog
         dialog.title("Настройки")
-        dialog.geometry("620x680")
+        dialog.geometry("680x720")  # Увеличим высоту для новой вкладки
         dialog.configure(bg=t["bg"])
         dialog.resizable(False, False)
         dialog.grab_set()
@@ -126,6 +127,12 @@ class DialogsMixin:
         builds_dir_var = tk.StringVar(value=self.settings.get("builds_dir", ""))
         verify_signature_var = tk.BooleanVar(value=self.settings.get("verify_installer_signature", True))
         current_theme = tk.StringVar(value=original_theme)
+
+        # Настройки консоли
+        console_font_family_var = tk.StringVar(value=self.settings.get("console_font_family", "Consolas"))
+        console_font_size_var = tk.IntVar(value=self.settings.get("console_font_size", 10))
+        console_line_spacing_var = tk.IntVar(value=self.settings.get("console_line_spacing", 2))
+        console_wrap_var = tk.StringVar(value=self.settings.get("console_wrap", "word"))
 
         def add_section(parent, title):
             """Создаёт контейнер с заголовком секции."""
@@ -215,6 +222,13 @@ class DialogsMixin:
 
         section = add_section(tab_build, "Автоматизация")
         auto_update_var = tk.BooleanVar(value=self.settings.get("auto_update", False))
+        check_updates_var = tk.BooleanVar(value=self.settings.get("check_updates", True))
+        cb = tk.Checkbutton(section, text="Проверять обновления при запуске",
+                            variable=check_updates_var, bg=t["bg"], fg=t["fg"],
+                            selectcolor=t["bg"], activebackground=t["bg"],
+                            activeforeground=t["menu_fg"])
+        cb.pack(anchor="w", padx=10)
+        self.settings_widgets.append(cb)
         cb = tk.Checkbutton(section, text="Автоматически скачивать и устанавливать обновления",
                             variable=auto_update_var, bg=t["bg"], fg=t["fg"],
                             selectcolor=t["bg"], activebackground=t["bg"],
@@ -240,7 +254,7 @@ class DialogsMixin:
         entry = tk.Entry(row, textvariable=builds_dir_var, bg=t["tree_bg"], fg=t["tree_fg"],
                          insertbackground=t["tree_fg"])
         entry.pack(side="left", fill="x", expand=True)
-        self._bind_paste(entry)  # <-- корректная вставка
+        self._bind_paste(entry)
         btn = tk.Button(row, text="Обзор...", bg=t["btn_default_bg"], fg=t["btn_default_fg"],
                         activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                         command=lambda: self._browse_builds_dir(builds_dir_var))
@@ -263,6 +277,38 @@ class DialogsMixin:
             theme_radios.append(rb)
         self.settings_widgets.extend(theme_radios)
 
+        # ===== Вкладка "Консоль" =====
+        tab_console = tk.Frame(notebook, bg=t["bg"])
+        notebook.add(tab_console, text="Консоль")
+        self.settings_tabs.append(tab_console)
+
+        section = add_section(tab_console, "Шрифт")
+        row = tk.Frame(section, bg=t["bg"])
+        row.pack(fill="x", padx=10, pady=2)
+        tk.Label(row, text="Семейство:", bg=t["bg"], fg=t["fg"]).pack(side="left")
+        font_combo = ttk.Combobox(row, textvariable=console_font_family_var,
+                                  values=["Consolas", "Courier New", "Cascadia Code", "Arial", "Times New Roman"])
+        font_combo.pack(side="left", padx=5)
+        self.settings_widgets.extend([row, font_combo])
+
+        row = tk.Frame(section, bg=t["bg"])
+        row.pack(fill="x", padx=10, pady=2)
+        tk.Label(row, text="Размер:", bg=t["bg"], fg=t["fg"]).pack(side="left")
+        spin_size = tk.Spinbox(row, from_=8, to=16, textvariable=console_font_size_var, width=4,
+                               bg=t["tree_bg"], fg=t["tree_fg"],
+                               buttonbackground=t["tree_bg"], insertbackground=t["tree_fg"])
+        spin_size.pack(side="left", padx=5)
+        self.settings_widgets.extend([row, spin_size])
+
+        row = tk.Frame(section, bg=t["bg"])
+        row.pack(fill="x", padx=10, pady=2)
+        tk.Label(row, text="Интервал между строками:", bg=t["bg"], fg=t["fg"]).pack(side="left")
+        spin_spacing = tk.Spinbox(row, from_=0, to=10, textvariable=console_line_spacing_var, width=4,
+                                  bg=t["tree_bg"], fg=t["tree_fg"],
+                                  buttonbackground=t["tree_bg"], insertbackground=t["tree_fg"])
+        spin_spacing.pack(side="left", padx=5)
+        self.settings_widgets.extend([row, spin_spacing])
+
         # ===== Вкладка "Инструменты" =====
         tab_tools = tk.Frame(notebook, bg=t["bg"])
         notebook.add(tab_tools, text="Инструменты")
@@ -273,24 +319,33 @@ class DialogsMixin:
         def build_tool_row(parent, label_text, check_func, install_cmd):
             row = tk.Frame(parent, bg=t["bg"])
             row.pack(fill="x", padx=10, pady=6)
-            status = "✅ Установлен" if check_func() else "❌ Не установлен"
-            fg = t["btn_accent_fg"] if check_func() else t["btn_danger_fg"]
-            lbl = tk.Label(row, text=f"{label_text}: {status}", bg=t["bg"], fg=fg)
+
+            lbl = tk.Label(row, text=f"{label_text}: проверка...", bg=t["bg"], fg=t["fg"])
             lbl.pack(side="left")
+
             btn = tk.Button(row, text="Установить/Переустановить",
                             bg=t["btn_accent_bg"], fg=t["btn_accent_fg"],
                             activebackground=t["menu_active_bg"], activeforeground=t["menu_active_fg"],
                             command=install_cmd)
             btn.pack(side="right")
-            self.settings_widgets.extend([row, lbl, btn])
-            return row, lbl, btn
 
-        build_tool_row(section, "Git",
-                       lambda: self._is_tool_installed("git"),
-                       lambda: self._download_and_run_installer("Git", self._get_git_url()))
-        build_tool_row(section, "Python",
-                       lambda: self._is_python_installed(),
-                       lambda: self._download_and_run_installer("Python", self._get_python_installer_url()))
+            self.settings_widgets.extend([row, lbl, btn])
+
+            def check_in_background():
+                try:
+                    ok = check_func()
+                except Exception:
+                    ok = False
+
+                def update_label(ok=ok, label_text=label_text):
+                    status = "✅ Установлен" if ok else "❌ Не установлен"
+                    fg = t["btn_accent_fg"] if ok else t["btn_danger_fg"]
+                    lbl.config(text=f"{label_text}: {status}", fg=fg)
+
+                self.after(0, update_label)
+
+            threading.Thread(target=check_in_background, daemon=True).start()
+            return row, lbl, btn
 
         def check_dotnet():
             if not self._is_tool_installed("dotnet"):
@@ -298,6 +353,12 @@ class DialogsMixin:
             installed = self._get_installed_sdks()
             return any(v.startswith("9.") or v.startswith("10.") for v in installed)
 
+        build_tool_row(section, "Git",
+                       lambda: self._is_tool_installed("git"),
+                       lambda: self._download_and_run_installer("Git", self._get_git_url()))
+        build_tool_row(section, "Python",
+                       lambda: self._is_python_installed(),
+                       lambda: self._download_and_run_installer("Python", self._get_python_installer_url()))
         build_tool_row(section, ".NET SDK 9/10", check_dotnet,
                        lambda: self._download_and_install_sdk("10.0.302", None, None))
 
@@ -332,11 +393,13 @@ class DialogsMixin:
         btn_frame.pack(pady=12)
 
         def save():
+            # Сохраняем все настройки
             self.settings["auto_delete_failed"] = auto_del_var.get()
             self.settings["confirm_clean_rebuild"] = confirm_clean_var.get()
             self.settings["shallow_clone"] = shallow_var.get()
             self.settings["parallel_build"] = parallel_var.get()
             self.settings["pre_restore"] = pre_restore_var.get()
+            self.settings["check_updates"] = check_updates_var.get()
             self.settings["strict_sdk_major"] = strict_sdk_var.get()
             self.settings["auto_install_deps"] = auto_deps_var.get()
             self.settings["confirm_destructive"] = confirm_destructive_var.get()
@@ -348,8 +411,20 @@ class DialogsMixin:
             self.settings["builds_dir"] = builds_dir_var.get().strip()
             self.settings["verify_installer_signature"] = verify_signature_var.get()
             self.settings["theme"] = current_theme.get()
+
+            # Настройки консоли
+            self.settings["console_font_family"] = console_font_family_var.get()
+            self.settings["console_font_size"] = console_font_size_var.get()
+            self.settings["console_line_spacing"] = console_line_spacing_var.get()
+            self.settings["console_wrap"] = console_wrap_var.get()
+
             self.save_settings()
             self.log("Настройки сохранены.", tag="info")
+
+            # Применяем настройки консоли немедленно
+            self._init_console_tags()
+            self._rebuild_console()  # если метод существует, иначе можно не вызывать
+
             self._close_settings_dialog(dialog)
 
         def reset():
@@ -360,6 +435,7 @@ class DialogsMixin:
             parallel_var.set(False)
             pre_restore_var.set(False)
             strict_sdk_var.set(True)
+            check_updates_var.set(True)
             auto_deps_var.set(False)
             confirm_destructive_var.set(True)
             keep_finished_var.set(True)
@@ -368,6 +444,12 @@ class DialogsMixin:
             verify_signature_var.set(True)
             current_theme.set("Стандартная")
             self.apply_theme("Стандартная")
+
+            # Сбрасываем настройки консоли
+            console_font_family_var.set("Consolas")
+            console_font_size_var.set(10)
+            console_line_spacing_var.set(2)
+            console_wrap_var.set("word")
 
         def cancel():
             self._close_settings_dialog(dialog)
@@ -396,7 +478,6 @@ class DialogsMixin:
         sys_open_path(cache_dir)
 
     def clear_cache(self):
-        """Очищает весь кэш: установщики и git-объекты."""
         self.clear_download_cache()
 
         git_cache_dir = Path(self.builds_dir) / ".git_cache"
@@ -404,46 +485,57 @@ class DialogsMixin:
             self.log("ℹ Git-кэш уже пуст.", tag="info")
             return
 
-        self.kill_processes_locking_folder(str(git_cache_dir))
-        time.sleep(0.5)
+        def worker():
+            self.kill_processes_locking_folder(str(git_cache_dir))
+            time.sleep(0.5)
 
-        try:
-            shutil.rmtree(git_cache_dir, ignore_errors=True)
-            if not git_cache_dir.exists():
-                self.log("🧹 Git-кэш очищен.", tag="success")
-                return
-        except Exception:
-            pass
-
-        if sys.platform == "win32":
             try:
-                subprocess.run(
-                    ["cmd", "/c", "rmdir", "/s", "/q", str(git_cache_dir)],
-                    capture_output=True, timeout=10,
-                    startupinfo=self._hidden_startupinfo(),
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                )
+                shutil.rmtree(git_cache_dir, ignore_errors=True)
                 if not git_cache_dir.exists():
-                    self.log("🧹 Git-кэш очищен через cmd.", tag="success")
+                    self.after(0, lambda: self.log("🧹 Git-кэш очищен.", tag="success"))
                     return
             except Exception:
                 pass
 
-        self.log("❌ Не удалось очистить git-кэш: файлы заняты другим процессом.", tag="error")
+            if sys.platform == "win32":
+                try:
+                    subprocess.run(
+                        ["cmd", "/c", "rmdir", "/s", "/q", str(git_cache_dir)],
+                        capture_output=True, timeout=10,
+                        startupinfo=self._hidden_startupinfo(),
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    )
+                    if not git_cache_dir.exists():
+                        self.after(0, lambda: self.log("🧹 Git-кэш очищен через cmd.", tag="success"))
+                        return
+                except Exception:
+                    pass
+
+            self.after(0, lambda: self.log(
+                "❌ Не удалось очистить git-кэш: файлы заняты другим процессом.", tag="error"
+            ))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def clear_download_cache(self):
-        """Очищает только кэш установщиков."""
         cache_dir = self.download_manager.cache_dir
         if not cache_dir.exists():
             messagebox.showinfo("Кэш", "Кэш загрузок пуст.")
             return
-        if messagebox.askyesno("Очистить кэш загрузок", "Удалить все кэшированные установщики?"):
+        if not messagebox.askyesno("Очистить кэш загрузок", "Удалить все кэшированные установщики?"):
+            return
+
+        def worker():
             try:
                 shutil.rmtree(cache_dir)
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                self.log("🧹 Кэш установщиков очищен.", tag="success")
+                self.after(0, lambda: self.log("🧹 Кэш установщиков очищен.", tag="success"))
             except Exception as e:
-                self.log(f"❌ Не удалось очистить кэш установщиков: {e}", tag="error")
+                self.after(0, lambda e=e: self.log(
+                    f"❌ Не удалось очистить кэш установщиков: {e}", tag="error"
+                ))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def add_repository_dialog(self):
         t = self.THEMES.get(self.settings.get("theme", "Стандартная"))
@@ -505,7 +597,7 @@ class DialogsMixin:
                 repo_data["prebuilt_url"] = prebuilt_url
             self.repositories[name] = repo_data
             self.save_config()
-            self.refresh_builds_list()
+            self.after_idle(self.refresh_builds_list)
             dialog.destroy()
 
         btn_frame = tk.Frame(dialog, bg=t["bg"])
@@ -541,7 +633,7 @@ class DialogsMixin:
                 return
             self.repositories[name]["url"] = new_url
             self.save_config()
-            self.refresh_builds_list()
+            self.after_idle(self.refresh_builds_list)
             self.tree.selection_set(name)
             self.tree.see(name)
             self.log(f"URL репозитория '{name}' обновлён.", tag="info")
@@ -587,7 +679,7 @@ class DialogsMixin:
 
             self.repositories[new_name] = self.repositories.pop(name)
             self.save_config()
-            self.refresh_builds_list()
+            self.after_idle(self.refresh_builds_list)
             self.tree.selection_set(new_name)
             self.tree.see(new_name)
             self.log(f"Сборка '{name}' переименована в '{new_name}'.", tag="info")
@@ -637,7 +729,7 @@ class DialogsMixin:
             if messagebox.askyesno("Подтверждение", f"Удалить репозиторий '{name}' из списка?", parent=dialog):
                 del self.repositories[name]
                 self.save_config()
-                self.refresh_builds_list()
+                self.after_idle(self.refresh_builds_list)
                 self._on_remove_dialog_close(dialog)
 
         btn_frame = tk.Frame(dialog, bg=t["bg"])
@@ -661,7 +753,7 @@ class DialogsMixin:
                 self.log_filters = self.config_manager.data.get("log_filters", {})
                 self.settings = self.config_manager.data.get("settings", {})
                 self.save_config()
-                self.refresh_builds_list()
+                self.after_idle(self.refresh_builds_list)
                 self.apply_theme(self.settings.get("theme", "Стандартная"))
                 messagebox.showinfo("Готово", "Конфигурация восстановлена.")
             else:

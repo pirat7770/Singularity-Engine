@@ -469,7 +469,7 @@ class GameMixin:
 
     def _show_system_logs(self):
         self._current_instance_id = None
-        self._refresh_console_view()
+        self._rebuild_console()
         self._refresh_instance_list()
 
     def stop_selected_build(self):

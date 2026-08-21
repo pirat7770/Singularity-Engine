@@ -15,8 +15,6 @@ import zipfile
 from pathlib import Path
 from collections import deque
 import ctypes
-import pystray
-from PIL import Image, ImageDraw
 
 try:
     import psutil
@@ -40,7 +38,8 @@ from core.config import ConfigManager
 from core.download_manager import DownloadManager
 from utils.system import hidden_startupinfo as sys_hidden_startupinfo, open_path as sys_open_path, find_tool_in_path as sys_find_tool
 from ui.dialogs import DialogsMixin
-from ui.constants import THEMES, BUSY_STATUSES, BUTTON_SEMANTICS, STATUS_ICONS
+from ui.constants import THEMES, BUSY_STATUSES, BUTTON_SEMANTICS, STATUS_ICONS, TOOL_HASHES
+from utils.updater import GITHUB_REPO
 
 def resource_path(relative):
     if hasattr(sys, '_MEIPASS'):
@@ -65,7 +64,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         except Exception:
             pass
 
-        self.VERSION = "2.12"
+        self.VERSION = "2.18"
         self.tray_icon = None
         self._tray_thread = None
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
@@ -85,15 +84,9 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         self._log_pending = deque()
         self._log_timer = None
         # -----------------------------------------------------------
-
-        self.TOOL_HASHES = {
-            "python-3.14.7-amd64.exe": "9d9eb2709ef81bf5cd30db3c2096bdbc4ea10087c22e62f27d356b36f6ae9649",
-            "python-3.14.7-arm64.exe": "9a3fe120cc81bc2cb099550f794d8356811f96a86c7f438519243c3485db928d",
-            "Git-2.55.0.3-64-bit.exe": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca",
-            "Git-2.55.0.3-arm64.exe": "e3d7f5a2214f214f0a93cf0d8915dab236a0e91c7de6de70a7dbde9a61c794db",
-            "dotnet-sdk-10.0.302-win-x64.exe": "b2618a69a4ae385eb03bde0de89468881318c6338b14e67574d691e145a7ce1c",
-            "dotnet-sdk-10.0.302-win-arm64.exe": "bedf0d3ae61284252db8012dab3809879fb6d9721335414b68992d32a6da20bb",
-        }
+        self._displayed_log_count = 0
+        self._last_console_instance_id = None
+        self.TOOL_HASHES = TOOL_HASHES
 
         if PY_WINSTYLES:
             try:
@@ -123,9 +116,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
             self.builds_dir = self.data_dir / "builds"
         self.builds_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cleanup_unused_git_cache()
-        self.cleanup_old_download_cache()
-        self._migrate_legacy_data()
+        threading.Thread(target=self._startup_background_tasks, daemon=True).start()
 
         self.after(100, self.check_required_tools)
 
@@ -155,9 +146,10 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         self.settings_tabs = []
 
         self.create_widgets()
-        self.after(0, self.refresh_builds_list)
+        self.after_idle(self.refresh_builds_list)
         self.after(2000, self._auto_refresh_instances)
-        self.after(3000, self.check_for_updates)
+        if self.settings.get("check_updates", True):
+            self.after(3000, self.check_for_updates)
 
         self._init_console_tags()
 
@@ -203,6 +195,15 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         style.configure("TPanedwindow", background="#2b2b2b")
         style.configure("TPanedwindow", sashrelief="flat", sashwidth=4, sashpad=0)
 
+    def _startup_background_tasks(self):
+        try:
+            self._migrate_legacy_data()
+            self.cleanup_unused_git_cache()
+            self.cleanup_old_download_cache()
+            self._refresh_system_path()
+        except Exception as e:
+            self.log(f"⚠ Ошибка фоновой инициализации: {e}", tag="warn")
+
     def _migrate_legacy_data(self):
         legacy_config = Path.cwd() / "config.json"
         if legacy_config.exists() and not self.CONFIG_FILE.exists():
@@ -219,22 +220,63 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
                     shutil.move(str(legacy_logs), str(new_logs))
 
     def _init_console_tags(self):
-        self.console.tag_config("error", foreground="#ff5555", font=("Consolas", 10, "bold"))
-        self.console.tag_config("success", foreground="#00ff88", font=("Consolas", 10, "bold"))
-        self.console.tag_config("warn", foreground="#ffaa00")
-        self.console.tag_config("info", foreground="#32CD32")
-        self.console.tag_config("bold", foreground="#ffffff", font=("Consolas", 10, "bold"))
-        self.console.tag_config("operation", foreground="#66ccff")
-        self.console.tag_config("done", foreground="#00ffaa", font=("Consolas", 10, "bold"))
-        self.console.tag_config("cancel", foreground="#cc66cc")
-        self.console.tag_config("server", foreground="#ffaa00")
-        self.console.tag_config("server_warn", foreground="#ff6600")
-        self.console.tag_config("server_error", foreground="#ff2200", font=("Consolas", 10, "bold"))
-        self.console.tag_config("client", foreground="#00ccff")
-        self.console.tag_config("client_warn", foreground="#00ffcc")
-        self.console.tag_config("client_error", foreground="#ff00aa", font=("Consolas", 10, "bold"))
+        """Инициализирует теги консоли и применяет пользовательские настройки."""
+        font_family = self.settings.get("console_font_family", "Consolas")
+        font_size = self.settings.get("console_font_size", 10)
+        line_spacing = self.settings.get("console_line_spacing", 2)
+        bg = self.settings.get("console_bg", "#000000")
+        fg = self.settings.get("console_fg", "#33ff33")
+        wrap = self.settings.get("console_wrap", "word")
+
+        self.console.configure(
+            bg=bg,
+            fg=fg,
+            font=(font_family, font_size),
+            spacing1=line_spacing // 2,
+            spacing2=line_spacing,
+            spacing3=line_spacing // 2,
+            wrap=wrap,
+        )
+        tags = {
+            "error": "#ff5555",
+            "success": "#00ff88",
+            "warn": "#ffaa00",
+            "info": "#32CD32",
+            "bold": "#ffffff",
+            "operation": "#66ccff",
+            "done": "#00ffaa",
+            "cancel": "#cc66cc",
+            "server": "#ffaa00",
+            "server_warn": "#ff6600",
+            "server_error": "#ff2200",
+            "client": "#00ccff",
+            "client_warn": "#00ffcc",
+            "client_error": "#ff00aa",
+        }
+        for tag, color in tags.items():
+            self.console.tag_config(tag, foreground=color)
+
+        self.console.yview_moveto(1.0)
 
     # ================== Вспомогательные методы ==================
+
+    def _rebuild_console(self):
+        self.console.config(state="normal")
+        self.console.delete("1.0", "end")
+
+        if self._current_instance_id and self._current_instance_id in self._instances:
+            buffer = self._instances[self._current_instance_id]["log_buffer"]
+        else:
+            buffer = self._log_history
+
+        for text, tag in list(buffer)[-500:]:  # показываем последние 500 строк
+            category = self._get_tag_category(tag)
+            if self.log_filters.get(category, True):
+                self.console.insert("end", text + "\n", tag)
+
+        self.console.config(state="disabled")
+        self._displayed_log_count = len(buffer)
+        self.console.see("end")  # при перестроении сразу вниз
 
     def _global_key_handler(self, event):
         """Перехватывает Ctrl+C/Ctrl+V по физическому расположению клавиш."""
@@ -278,14 +320,27 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
                 self._on_closing()
 
     def check_for_updates(self):
+        if not self.settings.get("check_updates", True):
+            return
+        threading.Thread(target=self._check_for_updates_thread, daemon=True).start()
+
+    def _check_for_updates_thread(self):
         from utils.updater import get_latest_release_asset, GITHUB_REPO
-        latest, asset_url, asset_type = get_latest_release_asset()
+        try:
+            latest, asset_url, asset_type = get_latest_release_asset()
+        except Exception as e:
+            self.log(f"⚠ Ошибка проверки обновлений: {e}", tag="warn")
+            return
+
         if latest is None:
             return
         latest_version = latest.lstrip("v")
         if latest_version == self.VERSION:
             return
 
+        self.after(0, lambda: self._show_update_dialog(latest, asset_url, asset_type))
+
+    def _show_update_dialog(self, latest, asset_url, asset_type):
         self.log(f"Доступна новая версия: {latest}", tag="done")
         self.notify_tray("Доступно обновление", f"Версия {latest} уже доступна.")
 
@@ -770,7 +825,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
     def _on_filter_changed(self, key):
         self.log_filters[key] = self.filter_vars[key].get()
         self.save_config()
-        self._refresh_console_view()
+        self._rebuild_console()
 
     def _on_tree_click(self, event):
         region = self.tree.identify("region", event.x, event.y)
@@ -847,8 +902,18 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
 
     def log(self, text, tag="info"):
         self._log_history.append((text, tag))
+
         if self._current_instance_id is None:
-            self.after(0, self._refresh_console_view)
+            self._log_pending.append((text, tag))
+            if self._log_timer is None:
+                self._log_timer = self.after(100, self._flush_log)
+        else:
+            inst = self._instances.get(self._current_instance_id)
+            if inst:
+                inst["log_buffer"].append((text, tag))
+                self._log_pending.append((text, tag))
+                if self._log_timer is None:
+                    self._log_timer = self.after(100, self._flush_log)
 
         if tag == "error":
             logger.error(text)
@@ -889,21 +954,44 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
             return "manager"
 
     def _refresh_console_view(self):
-        self.console.config(state="normal")
-        self.console.delete("1.0", "end")
-
+        # Определяем, какой буфер использовать
         if self._current_instance_id and self._current_instance_id in self._instances:
             buffer = self._instances[self._current_instance_id]["log_buffer"]
+            instance_key = self._current_instance_id
         else:
             buffer = self._log_history
+            instance_key = None
 
-        for text, tag in list(buffer)[-500:]:
+        # Если контекст сменился (или фильтры были изменены) – перестраиваем всё
+        if instance_key != self._last_console_instance_id:
+            self._rebuild_console()
+            self._last_console_instance_id = instance_key
+            return
+
+        # Определяем, был ли пользователь внизу
+        was_at_bottom = self.console.yview()[1] >= 0.999
+
+        # Берём только новые строки (начиная с уже показанного количества)
+        new_entries = list(buffer)[self._displayed_log_count:]
+
+        if not new_entries:
+            return
+
+        self.console.config(state="normal")
+
+        for text, tag in new_entries:
             category = self._get_tag_category(tag)
             if self.log_filters.get(category, True):
                 self.console.insert("end", text + "\n", tag)
 
-        self.console.see("end")
         self.console.config(state="disabled")
+
+        # Обновляем счётчик показанных строк
+        self._displayed_log_count = len(buffer)
+
+        # Прокручиваем вниз только если пользователь был внизу
+        if was_at_bottom:
+            self.console.see("end")
 
     def copy_logs(self):
         logs = self.console.get("1.0", "end").strip()
@@ -915,6 +1003,8 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
 
     def clear_console(self):
         self.console.delete("1.0", "end")
+        self._displayed_log_count = 0
+        self._last_console_instance_id = None
         self.progress_var.set(0)
         self.lbl_speed.config(text="0.00 MiB/s")
         self.progress_bar.config(mode="determinate")
@@ -1532,38 +1622,39 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
 
     def _create_tray_icon(self):
         try:
+            import pystray
+            from PIL import Image
+        except ImportError:
+            self.log("⚠ pystray/PIL не установлены", tag="warn")
+            return
+
+        try:
             icon_image = Image.open(resource_path("Singularity-Engine.ico"))
         except Exception as e:
             self.log(f"⚠ Не удалось загрузить иконку для трея: {e}", tag="warn")
             return
 
-        try:
-            menu = pystray.Menu(
-                pystray.MenuItem("Открыть", self._restore_from_tray),
-                pystray.MenuItem("Выход", self._exit_from_tray),
-            )
-            self.tray_icon = pystray.Icon(
-                "SingularityEngine",
-                icon_image,
-                "Singularity Engine",
-                menu
-            )
-            self._tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
-            self._tray_thread.start()
-        except Exception as e:
-            self.log(f"⚠ Не удалось создать иконку в трее: {e}", tag="warn")
-            self.tray_icon = None
-
     def show_notification(self, title, message):
         messagebox.showinfo(title, message)
 
     def refresh_builds_list(self):
+        threading.Thread(target=self._refresh_builds_list_thread, daemon=True).start()
+
+    def _refresh_builds_list_thread(self):
+        items = []
+        for name, repo_data in self.repositories.items():
+            raw_status = self.get_build_status(name)
+            running = self._is_game_running(name)
+            items.append((name, raw_status, running, repo_data))
+
+        self.after(0, lambda: self._update_builds_tree(items))
+
+    def _update_builds_tree(self, items):
         selected = self.tree.selection()
         selected_name = selected[0] if selected else None
         self.tree.delete(*self.tree.get_children())
 
         def status_sort_key(status):
-            """Возвращает числовой приоритет статуса (меньше = выше)."""
             if status == "installed":
                 return 0
             if status in self.BUSY_STATUSES:
@@ -1574,19 +1665,25 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
                 return 3
             if status == "missing":
                 return 4
-            return 5  # unknown
+            return 5
 
         def sort_key(name):
             repo_data = self.repositories[name]
             is_fav = repo_data.get("favorite", False)
-            status = self.get_build_status(name)
-            return (0 if is_fav else 1, 0, name.lower())
+            status = items_dict.get(name, ("missing", False, None))[0]  # временно
+            return (0 if is_fav else 1, status_sort_key(status), name.lower())
 
-        sorted_repos = sorted(self.repositories.items(), key=lambda item: sort_key(item[0]))
+        # Создаём словарь для быстрого доступа
+        items_dict = {name: (status, running, repo_data) for name, status, running, repo_data in items}
 
-        for name, repo_data in sorted_repos:
-            raw_status = self.get_build_status(name)
-            running = self._is_game_running(name)
+        sorted_names = sorted(items_dict.keys(), key=lambda n: (
+            0 if items_dict[n][2].get("favorite", False) else 1,
+            status_sort_key(items_dict[n][0]),
+            n.lower()
+        ))
+
+        for name in sorted_names:
+            raw_status, running, repo_data = items_dict[name]
             if raw_status in self.BUSY_STATUSES:
                 status_text = self.STATUS_ICONS.get(raw_status, raw_status)
             elif running:

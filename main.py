@@ -29,6 +29,8 @@ def main():
     try:
         app = SingularityEngineApp()
         app.mainloop()
+    except KeyboardInterrupt:
+        sys.exit(0)
     except Exception as e:
         # Выводим traceback в консоль
         traceback.print_exc()
