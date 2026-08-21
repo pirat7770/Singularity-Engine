@@ -64,7 +64,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         except Exception:
             pass
 
-        self.VERSION = "2.18"
+        self.VERSION = "2.21"
         self.tray_icon = None
         self._tray_thread = None
         self.title(f"Singularity Engine v{self.VERSION} - SS14 Manager")
@@ -1447,12 +1447,6 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
                 activebackground=t["menu_active_bg"],
                 activeforeground=t["menu_active_fg"],
             )
-
-    def _update_open_dialogs_theme(self, t):
-        if self.settings_dialog and self.settings_dialog.winfo_exists():
-            self.settings_dialog.configure(bg=t["bg"])
-        if self._repo_menu_window and self._repo_menu_window.winfo_exists():
-            self._repo_menu_window.configure(bg=t["menu_bg"])
 
     # ================== Недостающие методы ==================
     def _download_progress(self, block_num, block_size, total_size):

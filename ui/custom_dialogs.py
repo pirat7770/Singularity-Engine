@@ -1,3 +1,4 @@
+# ui/custom_dialogs.py
 import tkinter as tk
 import tkinter.messagebox as messagebox
 

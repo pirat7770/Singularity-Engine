@@ -823,6 +823,7 @@ class DialogsMixin:
         if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
             self.settings_dialog.configure(bg=t["bg"])
 
+            # --- ttk стили ---
             style = ttk.Style()
             style.configure("TNotebook", background=t["bg"], borderwidth=0, bordercolor=t["bg"])
             style.configure("TNotebook.Tab",
@@ -836,7 +837,6 @@ class DialogsMixin:
                       foreground=[("selected", t["menu_fg"])],
                       bordercolor=[("selected", t["menu_highlight"])])
 
-            # Обновляем стиль Combobox с цветной рамкой
             style.configure("Console.TCombobox",
                             fieldbackground=t["tree_bg"],
                             background=t["tree_bg"],
@@ -865,7 +865,6 @@ class DialogsMixin:
                       highlightcolor=[("focus", t["menu_highlight"])],
                       focuscolor=[("focus", t["menu_highlight"])])
 
-            # Обновляем стиль выпадающего списка Combobox
             style.configure("Console.TCombobox.Listbox",
                             background=t["tree_bg"],
                             foreground=t["tree_fg"],
@@ -875,17 +874,13 @@ class DialogsMixin:
                             relief="flat",
                             highlightthickness=0)
 
-            # Обновляем option_add
             self.option_add("*TCombobox*Listbox*Background", t["tree_bg"])
             self.option_add("*TCombobox*Listbox*Foreground", t["tree_fg"])
             self.option_add("*TCombobox*Listbox*selectBackground", t["tree_sel_bg"])
             self.option_add("*TCombobox*Listbox*selectForeground", t["tree_fg"])
 
-            for tab in self.settings_tabs:
-                if tab.winfo_exists():
-                    tab.configure(bg=t["bg"])
-
-            for widget in self.settings_widgets:
+            # --- Рекурсивная функция обновления ---
+            def update_widget_colors(widget):
                 if isinstance(widget, (tk.Checkbutton, tk.Radiobutton)):
                     widget.configure(bg=t["bg"], fg=t["fg"], selectcolor=t["bg"],
                                      activebackground=t["bg"], activeforeground=t["menu_fg"])
@@ -898,20 +893,37 @@ class DialogsMixin:
                 elif isinstance(widget, tk.Frame):
                     widget.configure(bg=t["bg"])
                 elif isinstance(widget, ttk.Combobox):
-                    # Стиль уже обновлён, ничего дополнительно не требуется
-                    pass
+                    widget.configure(style="Console.TCombobox")
                 elif isinstance(widget, tk.Button):
-                    if widget.cget("text") == "Сохранить":
+                    text = widget.cget("text")
+                    if text == "Сохранить":
                         bg, fg = t["btn_accent_bg"], t["btn_accent_fg"]
-                    elif widget.cget("text") == "По умолчанию":
+                    elif text == "По умолчанию":
                         bg, fg = t["btn_default_bg"], t["btn_default_fg"]
-                    elif widget.cget("text") == "Отмена":
+                    elif text == "Отмена":
                         bg, fg = t["btn_default_bg"], t["btn_default_fg"]
                     else:
                         bg, fg = t["btn_default_bg"], t["btn_default_fg"]
                     widget.configure(bg=bg, fg=fg,
                                      activebackground=t["menu_active_bg"],
                                      activeforeground=t["menu_active_fg"])
+
+                # Если Notebook — обрабатываем вкладки отдельно
+                if isinstance(widget, ttk.Notebook):
+                    for tab_id in widget.tabs():
+                        tab = widget.nametowidget(tab_id)
+                        tab.configure(bg=t["bg"])
+                        for child in tab.winfo_children():
+                            update_widget_colors(child)
+
+                # Рекурсивно обходим всех потомков
+                for child in widget.winfo_children():
+                    update_widget_colors(child)
+
+            update_widget_colors(self.settings_dialog)
+
+            # Принудительная перерисовка
+            self.settings_dialog.update_idletasks()
 
         if self._repo_menu_window is not None and self._repo_menu_window.winfo_exists():
             self._repo_menu_window.configure(bg=t["menu_bg"])

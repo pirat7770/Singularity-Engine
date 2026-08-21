@@ -1,12 +1,7 @@
 Traceback (most recent call last):
   File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\main.py", line 30, in main
     app = SingularityEngineApp()
-  File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\ui\main_window.py", line 63, in __init__
-    self._init_console_tags()
-    ~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\ui\main_window.py", line 225, in _init_console_tags
-    font_family = self.settings.get("console_font_family", "Consolas")
-                  ^^^^^^^^^^^^^
-  File "C:\python\python3.14.3\Lib\tkinter\__init__.py", line 2571, in __getattr__
-    return getattr(self.tk, attr)
-AttributeError: '_tkinter.tkapp' object has no attribute 'settings'
+  File "D:\ss14-dead-space\dead-space-14\Новая папка\Singularity-Engine\ui\main_window.py", line 159, in __init__
+    self._update_open_dialogs_theme()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+TypeError: SingularityEngineApp._update_open_dialogs_theme() missing 1 required positional argument: 't'
