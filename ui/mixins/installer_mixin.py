@@ -501,9 +501,21 @@ class InstallerMixin:
             self.after(0, self.progress_bar.start)
             self.after(0, self.lbl_speed.config, {"text": "Сборка..."})
 
-            if not self._run_subprocess([sys.executable, "RUN_THIS.py"], build_path,
-                                        "RUN_THIS.py", operation_name=name):
-                self.log("⚠ RUN_THIS.py не выполнен. Пробуем git submodule update...", tag="warn")
+            if getattr(sys, 'frozen', False):
+                # В скомпилированном приложении sys.executable указывает на .exe менеджера,
+                # поэтому ищем Python в системе.
+                python_cmd = self._find_tool_in_path("python") or self._find_tool_in_path("python3")
+            else:
+                python_cmd = sys.executable
+
+            if python_cmd:
+                if not self._run_subprocess([python_cmd, "RUN_THIS.py"], build_path,
+                                            "RUN_THIS.py", operation_name=name):
+                    self.log("⚠ RUN_THIS.py не выполнен. Пробуем git submodule update...", tag="warn")
+                    self._run_subprocess(["git", "submodule", "update", "--init", "--recursive"],
+                                         build_path, "git submodule update", operation_name=name)
+            else:
+                self.log("❌ Python не найден. Невозможно выполнить RUN_THIS.py.", tag="error")
                 self._run_subprocess(["git", "submodule", "update", "--init", "--recursive"],
                                      build_path, "git submodule update", operation_name=name)
 

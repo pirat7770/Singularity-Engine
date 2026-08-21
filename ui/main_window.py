@@ -439,7 +439,7 @@ class SingularityEngineApp(tk.Tk, DialogsMixin, SystemMixin, InstallerMixin, Bui
         return self.settings
 
     def _on_console_key(self, event):
-        if (event.state & 0x4) and event.keysym.lower() in ("c", "insert"):
+        if (event.state & 0x4) and event.keycode == 67:
             return None
         return "break"
 
