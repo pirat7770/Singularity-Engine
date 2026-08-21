@@ -12,7 +12,6 @@ import subprocess
 from ui.widgets import ToolTip, show_notification
 from utils.system import open_path as sys_open_path
 
-
 class DialogsMixin:
     """Миксин для всех диалоговых окон и утилит корзины."""
 
@@ -90,7 +89,7 @@ class DialogsMixin:
         dialog = tk.Toplevel(self)
         self.settings_dialog = dialog
         dialog.title("Настройки")
-        dialog.geometry("680x720")  # Увеличим высоту для новой вкладки
+        dialog.geometry("680x720")
         dialog.configure(bg=t["bg"])
         dialog.resizable(False, False)
         dialog.grab_set()
@@ -107,6 +106,51 @@ class DialogsMixin:
                   foreground=[("selected", t["menu_fg"])],
                   bordercolor=[("selected", t["menu_highlight"])])
         notebook.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # ===== Стилизация Combobox с цветной рамкой =====
+        style.configure("Console.TCombobox",
+                        fieldbackground=t["tree_bg"],
+                        background=t["tree_bg"],
+                        foreground=t["tree_fg"],
+                        arrowcolor=t["menu_fg"],
+                        bordercolor=t["tree_frame_highlight"],      # рамка без фокуса
+                        lightcolor=t["tree_bg"],
+                        darkcolor=t["tree_bg"],
+                        selectbackground=t["tree_sel_bg"],
+                        selectforeground=t["tree_fg"],
+                        focuscolor=t["menu_highlight"],             # цвет рамки фокуса (пунктир)
+                        highlightthickness=1,                       # толщина рамки
+                        highlightbackground=t["tree_frame_highlight"],
+                        highlightcolor=t["menu_highlight"],
+                        borderwidth=1,
+                        relief="solid")
+        style.map("Console.TCombobox",
+                  fieldbackground=[("readonly", t["tree_bg"]),
+                                   ("focus", t["tree_bg"])],
+                  foreground=[("readonly", t["tree_fg"]),
+                              ("focus", t["tree_fg"])],
+                  background=[("readonly", t["tree_bg"])],
+                  selectbackground=[("readonly", t["tree_sel_bg"])],
+                  selectforeground=[("readonly", t["tree_fg"])],
+                  bordercolor=[("focus", t["menu_highlight"])],     # при фокусе рамка становится яркой
+                  highlightcolor=[("focus", t["menu_highlight"])],
+                  focuscolor=[("focus", t["menu_highlight"])])
+
+        # Стиль для выпадающего списка (popdown listbox)
+        style.configure("Console.TCombobox.Listbox",
+                        background=t["tree_bg"],
+                        foreground=t["tree_fg"],
+                        selectbackground=t["tree_sel_bg"],
+                        selectforeground=t["tree_fg"],
+                        borderwidth=0,
+                        relief="flat",
+                        highlightthickness=0)
+
+        # Дополнительные настройки для listbox (на случай, если стиль не применится)
+        self.option_add("*TCombobox*Listbox*Background", t["tree_bg"])
+        self.option_add("*TCombobox*Listbox*Foreground", t["tree_fg"])
+        self.option_add("*TCombobox*Listbox*selectBackground", t["tree_sel_bg"])
+        self.option_add("*TCombobox*Listbox*selectForeground", t["tree_fg"])
 
         self.settings_widgets.clear()
         self.settings_tabs.clear()
@@ -287,7 +331,9 @@ class DialogsMixin:
         row.pack(fill="x", padx=10, pady=2)
         tk.Label(row, text="Семейство:", bg=t["bg"], fg=t["fg"]).pack(side="left")
         font_combo = ttk.Combobox(row, textvariable=console_font_family_var,
-                                  values=["Consolas", "Courier New", "Cascadia Code", "Arial", "Times New Roman"])
+                                  values=["Consolas", "Courier New", "Cascadia Code", "Arial", "Times New Roman"],
+                                  style="Console.TCombobox")
+        font_combo.configure(takefocus=False)
         font_combo.pack(side="left", padx=5)
         self.settings_widgets.extend([row, font_combo])
 
@@ -338,9 +384,10 @@ class DialogsMixin:
                     ok = False
 
                 def update_label(ok=ok, label_text=label_text):
-                    status = "✅ Установлен" if ok else "❌ Не установлен"
-                    fg = t["btn_accent_fg"] if ok else t["btn_danger_fg"]
-                    lbl.config(text=f"{label_text}: {status}", fg=fg)
+                    if lbl.winfo_exists():
+                        status = "✅ Установлен" if ok else "❌ Не установлен"
+                        fg = t["btn_accent_fg"] if ok else t["btn_danger_fg"]
+                        lbl.config(text=f"{label_text}: {status}", fg=fg)
 
                 self.after(0, update_label)
 
@@ -789,6 +836,51 @@ class DialogsMixin:
                       foreground=[("selected", t["menu_fg"])],
                       bordercolor=[("selected", t["menu_highlight"])])
 
+            # Обновляем стиль Combobox с цветной рамкой
+            style.configure("Console.TCombobox",
+                            fieldbackground=t["tree_bg"],
+                            background=t["tree_bg"],
+                            foreground=t["tree_fg"],
+                            arrowcolor=t["menu_fg"],
+                            bordercolor=t["tree_frame_highlight"],
+                            lightcolor=t["tree_bg"],
+                            darkcolor=t["tree_bg"],
+                            selectbackground=t["tree_sel_bg"],
+                            selectforeground=t["tree_fg"],
+                            focuscolor=t["menu_highlight"],
+                            highlightthickness=1,
+                            highlightbackground=t["tree_frame_highlight"],
+                            highlightcolor=t["menu_highlight"],
+                            borderwidth=1,
+                            relief="solid")
+            style.map("Console.TCombobox",
+                      fieldbackground=[("readonly", t["tree_bg"]),
+                                       ("focus", t["tree_bg"])],
+                      foreground=[("readonly", t["tree_fg"]),
+                                  ("focus", t["tree_fg"])],
+                      background=[("readonly", t["tree_bg"])],
+                      selectbackground=[("readonly", t["tree_sel_bg"])],
+                      selectforeground=[("readonly", t["tree_fg"])],
+                      bordercolor=[("focus", t["menu_highlight"])],
+                      highlightcolor=[("focus", t["menu_highlight"])],
+                      focuscolor=[("focus", t["menu_highlight"])])
+
+            # Обновляем стиль выпадающего списка Combobox
+            style.configure("Console.TCombobox.Listbox",
+                            background=t["tree_bg"],
+                            foreground=t["tree_fg"],
+                            selectbackground=t["tree_sel_bg"],
+                            selectforeground=t["tree_fg"],
+                            borderwidth=0,
+                            relief="flat",
+                            highlightthickness=0)
+
+            # Обновляем option_add
+            self.option_add("*TCombobox*Listbox*Background", t["tree_bg"])
+            self.option_add("*TCombobox*Listbox*Foreground", t["tree_fg"])
+            self.option_add("*TCombobox*Listbox*selectBackground", t["tree_sel_bg"])
+            self.option_add("*TCombobox*Listbox*selectForeground", t["tree_fg"])
+
             for tab in self.settings_tabs:
                 if tab.winfo_exists():
                     tab.configure(bg=t["bg"])
@@ -805,6 +897,9 @@ class DialogsMixin:
                     widget.configure(bg=t["bg"], fg=t["fg"])
                 elif isinstance(widget, tk.Frame):
                     widget.configure(bg=t["bg"])
+                elif isinstance(widget, ttk.Combobox):
+                    # Стиль уже обновлён, ничего дополнительно не требуется
+                    pass
                 elif isinstance(widget, tk.Button):
                     if widget.cget("text") == "Сохранить":
                         bg, fg = t["btn_accent_bg"], t["btn_accent_fg"]
